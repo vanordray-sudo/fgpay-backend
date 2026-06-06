@@ -15,7 +15,6 @@ const channelRoutes = require('./routes/channelRoutes');
 const internetRoutes = require('./routes/internetRoutes');
 const authRoutes = require('./routes/authRoutes');
 const testRoutes = require('./routes/testRoutes');
-const admin = require('./serviceAccountkey');
 const labRoutes = require('./routes/labRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const healthRoutes = require('./routes/healthRoutes');
