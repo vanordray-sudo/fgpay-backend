@@ -26,7 +26,7 @@ const medicalRecordRoutes = require('./routes/medicalRecordRoutes');
 const doctorAvailabilityRoutes = require('./routes/doctorAvailabilityRoutes');
 const professionalRoutes = require('./routes/professionalRoutes');
 const Stripe = require('stripe');
-
+// const admin = require('./serviceAccountkey');
 
 
 
