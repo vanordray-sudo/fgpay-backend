@@ -1546,12 +1546,35 @@ router.get('/professionals/pending', async (req, res) => {
   }
 });
 router.get('/notifications', authMiddleware, async (req, res) => {
-  console.log('NOTIFICATIONS ROUTE HIT');
+  try {
 
-  return res.json({
-    success: true,
-    notifications: [],
-  });
+    console.log('USER ID =', req.userId);
+
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM notifications
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      `,
+      [req.userId]
+    );
+
+    console.log('NOTIFS =', result.rows.length);
+
+    res.json(result.rows);
+
+  } catch (error) {
+
+    console.log('FULL NOTIFICATIONS ERROR');
+    console.log(error);
+
+    res.status(500).json({
+      success: false,
+      notifications: [],
+      message: error.toString(),
+    });
+  }
 });
 
 

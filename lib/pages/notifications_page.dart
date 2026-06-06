@@ -17,11 +17,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
   bool isLoading = true;
   List<dynamic> notifications = [];
 
-  @override
-  void initState() {
-    super.initState();
-    loadNotifications();
-  }
+ @override
+void initState() {
+  super.initState();
+  // loadNotifications();
+}
 
   Future<void> loadNotifications() async {
   final walletData = await WalletService.getNotifications();
