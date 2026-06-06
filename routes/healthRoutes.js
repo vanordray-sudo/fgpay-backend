@@ -1547,28 +1547,10 @@ router.get('/professionals/pending', async (req, res) => {
 });
 
 router.get('/notifications', authMiddleware, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `
-      SELECT *
-      FROM notifications
-      WHERE user_id = $1
-      ORDER BY created_at DESC
-      `,
-      [req.userId]
-    );
-
-    res.json(result.rows);
- } catch (error) {
-  console.error('GET HEALTH NOTIFICATIONS ERROR:', error);
-
-  return res.status(500).json({
-    success: false,
-    notifications: [],
-    message: 'Erreur notifications',
-    error: error.message,
+  return res.json({
+    success: true,
+    notifications: []
   });
-}
 });
 
 router.put('/professionals/:id/approve', auth, async (req, res) => {
