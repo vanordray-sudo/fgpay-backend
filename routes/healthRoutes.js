@@ -1545,13 +1545,15 @@ router.get('/professionals/pending', async (req, res) => {
     });
   }
 });
-
 router.get('/notifications', authMiddleware, async (req, res) => {
+  console.log('NOTIFICATIONS ROUTE HIT');
+
   return res.json({
     success: true,
-    notifications: []
+    notifications: [],
   });
 });
+
 
 router.put('/professionals/:id/approve', auth, async (req, res) => {
   try {

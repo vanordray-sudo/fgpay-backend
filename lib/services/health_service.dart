@@ -458,7 +458,7 @@ static Future<Map<String, dynamic>> cancelAppointment({
 static Future<List<dynamic>> getNotifications() async {
   final prefs = await SharedPreferences.getInstance();
   final token = prefs.getString('token');
-
+print('HEALTH URL => $baseUrl/notifications');
   final response = await http.get(
   Uri.parse('$baseUrl/notifications'),
   headers: {
