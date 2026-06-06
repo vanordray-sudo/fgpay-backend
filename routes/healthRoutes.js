@@ -1545,10 +1545,11 @@ router.get('/professionals/pending', async (req, res) => {
     });
   }
 });
+
 router.get('/notifications', authMiddleware, async (req, res) => {
   try {
 
-    console.log('USER ID =', req.userId);
+    console.log('USER ID:', req.userId);
 
     const result = await pool.query(
       `
@@ -1560,20 +1561,24 @@ router.get('/notifications', authMiddleware, async (req, res) => {
       [req.userId]
     );
 
-    console.log('NOTIFS =', result.rows.length);
+    console.log('ROWS:', result.rows.length);
 
-    res.json(result.rows);
+    return res.json({
+      success: true,
+      notifications: result.rows,
+    });
 
   } catch (error) {
 
-    console.log('FULL NOTIFICATIONS ERROR');
+    console.log('FULL NOTIFICATION ERROR:');
     console.log(error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       notifications: [],
       message: error.toString(),
     });
+
   }
 });
 
