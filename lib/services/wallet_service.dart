@@ -105,21 +105,6 @@ static Future<List<dynamic>> getAdminManualPayments() async {
 
 
 
-static Future<List<dynamic>> getNotifications() async {
-  final response = await http.get(
-    Uri.parse('${ApiConfig.baseUrl}/api/services/notifications'),
-    headers: await _headers(),
-  );
-
-  final data = jsonDecode(response.body);
-
-  if (data is Map && data['notifications'] is List) {
-    return data['notifications'];
-  }
-
-  return [];
-}
-
 static Future<int> getUnreadNotificationCount() async {
   final notifications = await getNotifications();
   return notifications.where((n) => n['is_read'] == false).length;
@@ -369,6 +354,37 @@ static Future<Map<String, dynamic>> validateManualPayment({
   );
 
   return jsonDecode(response.body);
+}
+
+static Future<List<dynamic>> getNotifications() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+
+    final response = await http.get(
+      Uri.parse('${ApiConfig.baseUrl}/api/wallet/notifications'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    print('HEALTH NOTIFS STATUS: ${response.statusCode}');
+    print('HEALTH NOTIFS BODY: ${response.body}');
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+
+      if (data['success'] == true && data['notifications'] != null) {
+        return data['notifications'];
+      }
+    }
+
+    return [];
+  } catch (e) {
+    print('HEALTH NOTIFS ERROR: $e');
+    return [];
+  }
 }
 
 static Future<Map<String, dynamic>> rejectManualPayment({

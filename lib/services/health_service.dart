@@ -469,7 +469,9 @@ static Future<List<dynamic>> getNotifications() async {
 
   print('HEALTH NOTIFS STATUS: ${response.statusCode}');
   print('HEALTH NOTIFS BODY: ${response.body}');
-
+print(
+  'NOTIFS URL = $baseUrl/notifications'
+);
   if (response.statusCode == 200) {
     final data = jsonDecode(response.body);
 

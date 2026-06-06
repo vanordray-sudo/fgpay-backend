@@ -27,9 +27,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
   final walletData = await WalletService.getNotifications();
    final healthData = await HealthService.getNotifications();
 
+
   print('WALLET NOTIFS: $walletData');
   print('HEALTH NOTIFS: $healthData');
-
+print('HEALTH NOTIFS URL = ${HealthService.baseUrl}/notifications');
 
   if (!mounted) return;
 

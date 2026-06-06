@@ -1559,12 +1559,16 @@ router.get('/notifications', authMiddleware, async (req, res) => {
     );
 
     res.json(result.rows);
-  } catch (err) {
-    console.error('GET HEALTH NOTIFICATIONS ERROR:', err);
-    res.status(500).json({
-      message: 'Erreur récupération notifications santé',
-    });
-  }
+ } catch (error) {
+  console.error('GET HEALTH NOTIFICATIONS ERROR:', error);
+
+  return res.status(500).json({
+    success: false,
+    notifications: [],
+    message: 'Erreur notifications',
+    error: error.message,
+  });
+}
 });
 
 router.put('/professionals/:id/approve', auth, async (req, res) => {
