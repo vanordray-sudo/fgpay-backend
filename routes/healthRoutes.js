@@ -54,7 +54,43 @@ router.get('/professionals/me/status', authMiddleware, async (req, res) => {
   }
 });
 
+router.get('/stats', authMiddleware, async (req, res) => {
+  try {
+    const doctors = await pool.query(
+      `SELECT COUNT(*) FROM users WHERE role = 'doctor' OR health_role = 'doctor'`
+    );
 
+    const appointments = await pool.query(
+      `SELECT COUNT(*) FROM appointments`
+    );
+
+    const results = await pool.query(
+      `SELECT COUNT(*) FROM medical_records`
+    );
+
+    const prescriptions = await pool.query(
+      `SELECT COUNT(*) FROM prescriptions`
+    );
+
+    res.json({
+      success: true,
+      doctors: Number(doctors.rows[0].count),
+      appointments: Number(appointments.rows[0].count),
+      results: Number(results.rows[0].count),
+      prescriptions: Number(prescriptions.rows[0].count),
+    });
+  } catch (error) {
+    console.log('HEALTH STATS ERROR:', error);
+    res.status(500).json({
+      success: false,
+      doctors: 0,
+      appointments: 0,
+      results: 0,
+      prescriptions: 0,
+      message: error.toString(),
+    });
+  }
+});
 router.post('/subscribe',authMiddleware,async (req, res) => {
     try {
       const userId = req.userId;

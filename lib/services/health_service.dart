@@ -212,6 +212,34 @@ final token = await AuthService.getToken();
   return [];
 }
 
+static Future<Map<String, dynamic>> getStats() async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('token');
+
+  final response = await http.get(
+    Uri.parse('$baseUrl/stats'),
+    headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    },
+  );
+
+  print('HEALTH STATS STATUS: ${response.statusCode}');
+  print('HEALTH STATS BODY: ${response.body}');
+
+  if (response.statusCode == 200) {
+    final data = jsonDecode(response.body);
+    return data;
+  }
+
+  return {
+    'doctors': 0,
+    'appointments': 0,
+    'results': 0,
+    'prescriptions': 0,
+  };
+}
+
 static Future<Map<String, dynamic>> getHealthStats() async {
   final token = await AuthService.getToken();
 
@@ -223,10 +251,13 @@ static Future<Map<String, dynamic>> getHealthStats() async {
     },
   );
 
+  print('STATS STATUS: ${response.statusCode}');
+  print('STATS BODY: ${response.body}');
+
   final data = jsonDecode(response.body);
 
-  if (response.statusCode == 200 && data['success'] == true) {
-    return data['stats'];
+  if (response.statusCode == 200) {
+    return data;
   }
 
   return {

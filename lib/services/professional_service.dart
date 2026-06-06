@@ -18,7 +18,7 @@ class ProfessionalService {
         'Authorization': 'Bearer $token',
       },
     );
-
+print('STATUS RESPONSE = ${response.body}');
     final data = jsonDecode(response.body);
 
     if (response.statusCode == 200) {
