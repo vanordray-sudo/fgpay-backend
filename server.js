@@ -55,6 +55,7 @@ app.use( '/uploads',express.static(path.join(__dirname, 'uploads')));
 app.use('/api/health', healthRoutes);
 
 app.use('/api/subscription', router);
+app.use('/api/wallet', walletRoutes);
 app.use('/api/test', testRoutes);
 app.use('/api/channels', channelRoutes);
 app.use('/api/internet', internetRoutes);
