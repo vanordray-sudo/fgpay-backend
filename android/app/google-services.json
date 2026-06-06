@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "856691475658",
+    "project_id": "fgpay-29f06",
+    "storage_bucket": "fgpay-29f06.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:856691475658:android:32082dcef8781627b72033",
+        "android_client_info": {
+          "package_name": "com.example.fgpay_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB78THiyFf4xckpOBwbxR_8sgfDjHxEisM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:856691475658:android:5349f63fa7fd4480b72033",
+        "android_client_info": {
+          "package_name": "com.example.fgpay_clean"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB78THiyFf4xckpOBwbxR_8sgfDjHxEisM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

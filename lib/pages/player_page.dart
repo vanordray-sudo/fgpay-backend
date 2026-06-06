@@ -1,8 +1,9 @@
-import 'dart:html' as html;
-import 'dart:js' as js;
-import 'dart:ui_web' as ui_web;
-
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:html' as html;
 
 class PlayerPage extends StatefulWidget {
   final String title;
@@ -19,169 +20,135 @@ class PlayerPage extends StatefulWidget {
 }
 
 class _PlayerPageState extends State<PlayerPage> {
-  late final String _viewType;
-  late final html.DivElement _container;
-  late final html.VideoElement _videoElement;
+  VideoPlayerController? _videoController;
+  ChewieController? _chewieController;
 
-  bool _isReady = false;
-  bool _hasError = false;
-  String _errorMessage = 'Chargement du flux...';
+  bool _isLoading = true;
+  String? _error;
 
-  @override
-  void initState() {
-    super.initState();
 
-    _viewType = 'fg-hls-player-${DateTime.now().millisecondsSinceEpoch}';
+ @override
+void initState() {
+  super.initState();
+  _initPlayer();
+  
 
-    _videoElement = html.VideoElement()
-      ..controls = true
-      ..autoplay = true
-      ..muted = false
-      ..style.width = '100%'
-      ..style.height = '100%'
-      ..style.backgroundColor = 'black'
-      ..style.objectFit = 'contain';
+}
 
-    _videoElement.setAttribute('playsinline', 'true');
 
-    _container = html.DivElement()
-      ..style.width = '100%'
-      ..style.height = '100%'
-      ..style.backgroundColor = 'black'
-      ..children.add(_videoElement);
-
-    ui_web.platformViewRegistry.registerViewFactory(
-      _viewType,
-      (int viewId) => _container,
-    );
-
-    _videoElement.onLoadedMetadata.listen((_) {
-      if (!mounted) return;
-      setState(() {
-        _isReady = true;
-        _hasError = false;
-        _errorMessage = '';
-      });
+  Future<void> _initPlayer() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
     });
 
-    _videoElement.onPlaying.listen((_) {
-      if (!mounted) return;
-      setState(() {
-        _isReady = true;
-        _hasError = false;
-        _errorMessage = '';
-      });
-    });
-
-    _videoElement.onError.listen((_) {
-      if (!mounted) return;
-      setState(() {
-        _hasError = true;
-        _errorMessage = 'Impossible de lire ce flux.';
-      });
-    });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _attachStream();
-    });
-  }
-
-  void _attachStream() {
     try {
-      final dynamic hlsClass = js.context['Hls'];
+      _chewieController?.dispose();
+      await _videoController?.dispose();
 
-      if (hlsClass != null && js.context.callMethod('eval', ['Hls.isSupported()']) == true) {
-        final dynamic hls = js.JsObject(hlsClass, [
-          js.JsObject.jsify({
-            'enableWorker': true,
-            'lowLatencyMode': false,
-            'backBufferLength': 90,
-          })
-        ]);
+      _videoController = VideoPlayerController.networkUrl(
+        Uri.parse(widget.url),
+      );
 
-        hls.callMethod('loadSource', [widget.url]);
-        hls.callMethod('attachMedia', [_videoElement]);
-      } else {
-        _videoElement.src = widget.url;
-        _videoElement.load();
-        _videoElement.play();
-      }
-    } catch (e) {
+      await _videoController!.initialize();
+
+      _chewieController = ChewieController(
+        videoPlayerController: _videoController!,
+        autoPlay: true,
+        looping: true,
+        allowFullScreen: true,
+        allowMuting: true,
+      );
+
+      if (!mounted) return;
       setState(() {
-        _hasError = true;
-        _errorMessage = 'Erreur player: $e';
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = e.toString();
       });
     }
   }
 
-  void _reloadStream() {
-    setState(() {
-      _isReady = false;
-      _hasError = false;
-      _errorMessage = 'Rechargement du flux...';
-    });
-
-    try {
-      _videoElement.pause();
-      _videoElement.removeAttribute('src');
-      _videoElement.load();
-    } catch (_) {}
-
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (!mounted) return;
-      _attachStream();
-    });
-  }
-
-  @override
-  void dispose() {
-    try {
-      _videoElement.pause();
-      _videoElement.removeAttribute('src');
-      _videoElement.load();
-    } catch (_) {}
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(widget.title),
-      ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: HtmlElementView(viewType: _viewType),
-          ),
-          if (!_isReady || _hasError)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black54,
-                alignment: Alignment.center,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 12),
-                    Text(
-                      _errorMessage,
-                      style: const TextStyle(color: Colors.white, fontSize: 16),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _reloadStream,
-                      child: const Text('Recharger'),
-                    ),
-                  ],
-                ),
-              ),
+  Widget _errorView(String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 42),
+            const SizedBox(height: 12),
+            const Text(
+              'Flux indisponible pour le moment',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
             ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const SizedBox(height: 14),
+            ElevatedButton.icon(
+              onPressed: _initPlayer,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Réessayer'),
+            ),
+          ],
+        ),
       ),
     );
   }
+
+ @override
+void dispose() {
+  _chewieController?.dispose();
+  _videoController?.dispose();
+  
+
+  super.dispose(); // ✅ toujou dènye
 }
+@override
+Widget build(BuildContext context) {
+  if (_isLoading) {
+    return const Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(child: CircularProgressIndicator()),
+    );
+  }
+
+  if (_error != null) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: ElevatedButton(
+          onPressed: _initPlayer,
+          child: const Text("Réessayer"),
+        ),
+      ),
+    );
+  }
+
+  final hasPlayer = _chewieController != null;
+
+  return Scaffold(
+    backgroundColor: Colors.black,
+    appBar: AppBar(
+      title: Text(widget.title),
+      backgroundColor: Colors.black,
+    ),
+    body: Center(
+      child: hasPlayer
+          ? AspectRatio(
+              aspectRatio: _videoController!.value.aspectRatio,
+              child: Chewie(controller: _chewieController!),
+            )
+          : const Text("Erreur player"),
+    ),
+  );
+}
+  }

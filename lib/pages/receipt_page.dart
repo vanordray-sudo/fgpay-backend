@@ -1,151 +1,56 @@
 import 'package:flutter/material.dart';
-import '../services/pdf_service.dart';
+import 'dashboard_page.dart';
 
 class ReceiptPage extends StatelessWidget {
-  final String senderName;
-  final String senderPhone;
-  final String receiverName;
-  final String receiverPhone;
-  final double amount;
-  final String reference;
-  final String date;
-
-
-  // ✅ nouvo chan yo
-  final String transactionType;
-  final String description;
-  final String senderNif;
-  final String senderAddress;
+  final Map<String, dynamic> data;
 
   const ReceiptPage({
     super.key,
-    required this.senderName,
-    required this.senderPhone,
-    required this.receiverName,
-    required this.receiverPhone,
-    required this.amount,
-    required this.reference,
-    required this.date,
-    required this.senderNif,
-    required this.senderAddress,
-    this.transactionType = 'transfer',
-    this.description = '',
+    required this.data,
   });
 
-  String safeValue(String? value, {String fallback = 'N/A'}) {
-    if (value == null || value.trim().isEmpty) {
-      return fallback;
-    }
-    return value.trim();
+  double _toDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString()) ?? 0.0;
   }
 
-  String formatDate(String rawDate) {
-    if (rawDate.trim().isEmpty) {
-      return 'N/A';
-    }
-
-    try {
-      final parsed = DateTime.parse(rawDate).toLocal();
-
-      final day = parsed.day.toString().padLeft(2, '0');
-      final month = parsed.month.toString().padLeft(2, '0');
-      final year = parsed.year.toString();
-      final hour = parsed.hour.toString().padLeft(2, '0');
-      final minute = parsed.minute.toString().padLeft(2, '0');
-
-      return '$day/$month/$year à $hour:$minute';
-    } catch (_) {
-      return rawDate;
-    }
+  String _toText(dynamic value, {String fallback = 'N/A'}) {
+    if (value == null) return fallback;
+    final text = value.toString().trim();
+    return text.isEmpty ? fallback : text;
   }
 
-  String get receiptTitle {
-    if (transactionType == 'payment') {
-      return 'Paiement réussi';
-    }
-    return 'Transfert réussi';
-  }
-
-  String get sectionTitle {
-    if (transactionType == 'payment') {
-      return 'Informations du paiement';
-    }
-    return 'Informations du transfert';
-  }
-
-  String get receiverLabel {
-    if (transactionType == 'payment') {
-      return 'Service / Marchand';
-    }
-    return 'Destinataire';
-  }
-
-  IconData get headerIcon {
-    if (transactionType == 'payment') {
-      return Icons.payment;
-    }
-    return Icons.check_circle;
-  }
-
-Widget _buildRow(String label, String value) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          flex: 4,
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: Colors.black54,
-              fontSize: 15,
-            ),
-          ),
-        ),
-        Expanded(
-          flex: 5,
-          child: Text(
-            value.isEmpty ? 'N/A' : value,
-            textAlign: TextAlign.right,
-            style: const TextStyle(
-              color: Colors.black87,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-  Widget buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+  Widget _infoTile(String label, String value) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            flex: 4,
             child: Text(
               label,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.black54,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade600,
               ),
             ),
           ),
+          const SizedBox(width: 12),
           Expanded(
-            flex: 6,
             child: Text(
               value,
               textAlign: TextAlign.right,
               style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -154,351 +59,270 @@ Widget _buildRow(String label, String value) {
     );
   }
 
-  Widget buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF0D6EFD),
+  Widget _summaryBox(String label, String value, {bool highlight = false}) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: highlight ? const Color(0xFFEAFBF2) : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: highlight ? const Color(0xFFB7E4C7) : Colors.grey.shade300,
           ),
         ),
-      ),
-    );
-  }
-
-  Widget buildStatusBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE8F8EE),
-        borderRadius: BorderRadius.circular(30),
-      ),
-      child: const Text(
-        'Complété',
-        style: TextStyle(
-          color: Colors.green,
-          fontWeight: FontWeight.bold,
-          fontSize: 12,
+        child: Column(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: highlight ? 18 : 16,
+                fontWeight: FontWeight.bold,
+                color: highlight ? const Color(0xFF15803D) : Colors.black87,
+              ),
+            ),
+          ],
         ),
       ),
     );
-  }
-
-  Future<void> handlePrint(BuildContext context) async {
-    try {
-      await PdfService.printReceipt(
-        senderName: safeValue(senderName),
-        senderPhone: safeValue(senderPhone),
-        receiverName: safeValue(receiverName),
-        receiverPhone: safeValue(receiverPhone),
-        amount: amount,
-        reference: safeValue(reference),
-        date: formatDate(date),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur PDF: $e'),
-        ),
-      );
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final formattedDate = formatDate(date);
-    final safeReference = safeValue(reference);
-    final safeSenderName = safeValue(senderName);
-    final safeSenderPhone = safeValue(senderPhone);
-    final safeReceiverName = safeValue(receiverName);
-    final safeReceiverPhone = safeValue(receiverPhone);
-    final safeDescription = safeValue(description, fallback: '-');
+final receipt = data['receipt'] ?? data;
+final meta = data['data'] ?? data;
+ final baseAmount = _toDouble(
+  receipt['baseAmount'] ?? receipt['base_amount'] ?? receipt['amount'],
+);
+
+final tcaAmount = _toDouble(
+  receipt['tcaAmount'] ?? receipt['tca_amount'],
+);
+
+final fgpayCommission = _toDouble(
+  receipt['commissionAmount'] ??
+  receipt['fgpayCommission'] ??
+  receipt['fgpay_commission'] ??
+  receipt['commission'],
+);
+
+final totalAmount = _toDouble(
+  receipt['totalAmount'] ?? receipt['total_amount'] ?? receipt['amount'],
+);  
+
+   final merchantName = _toText(
+  meta['merchantName'] ?? meta['merchant_name'] ?? meta['receiverName'] ?? meta['receiver'],
+  fallback: 'Merchant',
+);
+
+final description = _toText(
+  meta['description'] ?? meta['title'],
+  fallback: 'Paiement effectué avec succès',
+);
+
+final reference = _toText(
+  data['reference'] ??
+  meta['reference'] ??
+  data['transaction']?['reference'] ??
+  data['transactionId'] ??
+  data['id'],
+);
+
+final createdAt = _toText(
+  receipt['date'] ??
+  data['createdAt'] ??
+  data['created_at'] ??
+  data['date'] ??
+  data['transaction']?['created_at'],
+  fallback: 'N/A',
+);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
+      backgroundColor: const Color(0xFFF6F8FC),
       appBar: AppBar(
-        title: const Text('FGPay Receipt'),
-        centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFF6F8FC),
         foregroundColor: Colors.black87,
+        centerTitle: true,
+        title: const Text('Reçu FGPay'),
       ),
-      body: Center(
+      body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: const [
-                  BoxShadow(
-                    blurRadius: 18,
-                    spreadRadius: 2,
-                    offset: Offset(0, 8),
-                    color: Color.fromRGBO(0, 0, 0, 0.08),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF5B6CFF), Color(0xFF2D9CFF)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.blue.withOpacity(0.18),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 76,
+                      height: 76,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.18),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.check_circle,
+                        color: Colors.white,
+                        size: 46,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Paiement réussi',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      description,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Montant total débité',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${totalAmount.toStringAsFixed(2)} HTG',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 30,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  _summaryBox(
+                    'Base',
+                    '${baseAmount.toStringAsFixed(2)} HTG',
+                  ),
+                  const SizedBox(width: 12),
+                  _summaryBox(
+                    'TCA',
+                    '${tcaAmount.toStringAsFixed(2)} HTG',
+                  ),
+                  const SizedBox(width: 12),
+                  _summaryBox(
+                    'Commission',
+                    '${fgpayCommission.toStringAsFixed(2)} HTG',
                   ),
                 ],
               ),
-              child: Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(28),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 22,
-                        ),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFF0D6EFD),
-                              Color(0xFF3FA2FF),
-                            ],
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            Container(
-                              width: 74,
-                              height: 74,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                headerIcon,
-                                size: 46,
-                                color: Colors.green,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'FGPay',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 26,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Digital Transaction Receipt',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 18),
-                            Text(
-                              receiptTitle,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              '${amount.toStringAsFixed(2)} HTG',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 34,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FBFF),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFFD7E8FF)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Transaction Summary',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.receipt_long,
-                                  color: Colors.blue,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Référence: $safeReference',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      buildSectionTitle(sectionTitle),
-                      const Divider(height: 1),
-                      buildInfoRow('Expéditeur', safeSenderName),
-                       _buildRow('NIF expéditeur', senderNif),
-                       _buildRow('Adresse expéditeur', senderAddress),
-                      buildInfoRow('Téléphone expéditeur', safeSenderPhone),
-                      buildInfoRow(receiverLabel, safeReceiverName),
-
-                      if (transactionType != 'payment')
-                        buildInfoRow(
-                          'Téléphone destinataire',
-                          safeReceiverPhone,
-                        ),
-
-                      if (transactionType == 'payment')
-                        buildInfoRow('Description', safeDescription),
-
-                      buildInfoRow('Référence', safeReference),
-                      buildInfoRow('Date', formattedDate),
-
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Row(
-                          children: [
-                            const Expanded(
-                              flex: 4,
-                              child: Text(
-                                'Statut',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black54,
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              flex: 6,
-                              child: Align(
-                                alignment: Alignment.centerRight,
-                                child: buildStatusBadge(),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const Divider(height: 28),
-                      const SizedBox(height: 8),
-
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton.icon(
-                          onPressed: () => handlePrint(context),
-                          icon: const Icon(Icons.picture_as_pdf),
-                          label: const Text(
-                            'Télécharger / Imprimer PDF',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0D6EFD),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.pop(context);
-                          },
-                          icon: const Icon(Icons.home),
-                          label: const Text(
-                            'Retour au dashboard',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.black87,
-                            side: const BorderSide(color: Color(0xFFD0D7E2)),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 22),
-                      const Divider(),
-                      const SizedBox(height: 10),
-
-                      const Text(
-                        'FGPay — Digital Payments for Haiti',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.black54,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Receipt generated successfully',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.black38,
-                        ),
-                      ),
-                    ],
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _summaryBox(
+                    'Total',
+                    '${totalAmount.toStringAsFixed(2)} HTG',
+                    highlight: true,
                   ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: Colors.grey.shade200),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Détails transaction',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _infoTile('Marchand', merchantName),
+                    _infoTile('Description', description),
+                    _infoTile('Référence', reference),
+                    _infoTile('Date', createdAt),
+                    _infoTile(
+                      'Statut',
+                      _toText(data['status'], fallback: 'SUCCESS'),
+                    ),
+                  ],
                 ),
               ),
-            ),
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2D9CFF),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const DashboardPage(),
+                      ),
+                      (route) => false,
+                    );
+                  },
+                  icon: const Icon(Icons.dashboard_customize_outlined),
+                  label: const Text('Retour au Dashboard'),
+                ),
+              ),
+            ],
           ),
         ),
       ),

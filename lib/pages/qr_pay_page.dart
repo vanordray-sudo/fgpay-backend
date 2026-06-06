@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../services/auth_service.dart';
 
 class QrPayPage extends StatelessWidget {
   final int merchantId;
   final String merchantName;
   final double? amount;
+
 
   const QrPayPage({
     super.key,
@@ -17,11 +19,11 @@ class QrPayPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final qrData = jsonEncode({
-      'type': 'fgpay_qr',
-      'merchantId': merchantId,
-      'merchantName': merchantName,
-      'amount': amount,
-    });
+  'type': 'fgpay_qr',
+  'merchantId': merchantId,
+  'merchantName': merchantName,
+  'amount': amount ?? 500, // 🔥 sa a enpòtan
+});
 
     return Scaffold(
       appBar: AppBar(

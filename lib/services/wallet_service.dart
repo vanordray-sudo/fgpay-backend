@@ -1,11 +1,48 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
-import 'auth_service.dart';
+import '../services/auth_service.dart';
+
 
 class WalletService {
+   
+ 
+static Future<Map<String, dynamic>> subscribe({
+  required String service,
+  required String plan,
+  required double amount,
+  required String pin,
+}) async {
+ final prefs = await SharedPreferences.getInstance();
+final token = prefs.getString('token') ?? '';
+
+
+
+print('TOKEN SUBSCRIBE: $token');
+
+
+final res = await http.post(
+  Uri.parse('${ApiConfig.baseUrl}/api/subscription/subscribe'),
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer $token',
+  },
+  body: jsonEncode({
+    'service': service,
+    'plan': plan,
+    'amount': amount,
+    'pin': pin,
+  }),
+);
+
+  return jsonDecode(res.body);
+}
+
+  
   static Future<Map<String, String>> _headers() async {
-    final token = await AuthService.getToken();
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token') ?? '';
 
     return {
       'Content-Type': 'application/json',
@@ -13,257 +50,343 @@ class WalletService {
     };
   }
 
-  // ✅ GET BALANCE
-  static Future<double> getBalance() async {
+  static Future<String> getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('token') ?? '';
+  }
+
+static Future<void> saveFcmToken(String token) async {
   try {
-    final headers = await _headers();
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/api/wallet/save-fcm-token'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'token': token,
+      }),
+    );
+
+    print('FCM SAVE RESPONSE: ${response.body}');
+  } catch (e) {
+    print('FCM SAVE ERROR: $e');
+  }
+}
+
+static Future<Map<String, dynamic>> getAdminPayments() async {
+  final token = await AuthService.getToken();
+
+  final response = await http.get(
+    Uri.parse('${ApiConfig.baseUrl}/admin/manual-payments'),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    },
+  );
+
+  // DEBUG
+  print(response.body);
+
+  return jsonDecode(response.body);
+}
+
+static Future<List<dynamic>> getAdminManualPayments() async {
+  final response = await http.get(
+    Uri.parse('${ApiConfig.baseUrl}/api/services/admin/manual-payments'),
+    headers: await _headers(),
+  );
+
+  final data = jsonDecode(response.body);
+
+  if (data is Map && data['payments'] is List) {
+    return data['payments'];
+  }
+
+  return [];
+}
+
+
+
+static Future<List<dynamic>> getNotifications() async {
+  final response = await http.get(
+    Uri.parse('${ApiConfig.baseUrl}/api/services/notifications'),
+    headers: await _headers(),
+  );
+
+  final data = jsonDecode(response.body);
+
+  if (data is Map && data['notifications'] is List) {
+    return data['notifications'];
+  }
+
+  return [];
+}
+
+static Future<int> getUnreadNotificationCount() async {
+  final notifications = await getNotifications();
+  return notifications.where((n) => n['is_read'] == false).length;
+}
+
+  static Future<double?> getBalance() async {
+  try {
+    final token = await AuthService.getToken();
+print('JWT FGPAY TOKEN: $token');
 
     final response = await http.get(
       Uri.parse('${ApiConfig.baseUrl}/api/wallet/balance'),
-      headers: headers,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
     );
 
-    print('BALANCE RESPONSE: ${response.body}');
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+print('BALANCE STATUS = ${response.statusCode}');
+print('BALANCE BODY = ${response.body}');
 
-      return (data['balance'] ?? 0).toDouble();
+final data = jsonDecode(response.body);
+    
+
+    if (response.statusCode == 200 && data['success'] == true) {
+      return (data['balance'] as num).toDouble();
     }
 
-    print('GetBalance failed: ${response.statusCode}');
-    return 0;
+    return null;
   } catch (e) {
-    print('GetBalance error: $e');
-    return 0;
+    print('GET BALANCE ERROR: $e');
+    return null;
   }
 }
 
-  // ✅ GET TRANSACTIONS
-  static Future<List<Map<String, dynamic>>> getTransactions() async {
-    try {
-      final headers = await _headers();
+  static Future<List<dynamic>> getTransactions() async {
+  final response = await http.get(
+    Uri.parse('${ApiConfig.baseUrl}/api/wallet/transactions'),
+    headers: await _headers(),
+  );
 
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}/api/wallet/transactions'),
-        headers: headers,
-      );
+  final data = jsonDecode(response.body);
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        if (data is List) {
-          return List<Map<String, dynamic>>.from(data);
-        }
-
-        if (data is Map && data['transactions'] is List) {
-          return List<Map<String, dynamic>>.from(data['transactions']);
-        }
-      }
-
-      print('GetTransactions failed: ${response.statusCode} - ${response.body}');
-      return [];
-    } catch (e) {
-      print('GetTransactions error: $e');
-      return [];
-    }
+  if (data is List) {
+    return data;
   }
 
-  // ✅ TOP UP
- static Future<Map<String, dynamic>> topUp(double amount) async {
+  if (data is Map && data['transactions'] is List) {
+    return data['transactions'];
+  }
+
+  return [];
+}
+
+static Future<Map<String, dynamic>> manualTopup({
+  required double amount,
+  required String method,
+}) async {
+  final token = await AuthService.getToken();
+
+  final response = await http.post(
+    Uri.parse('${ApiConfig.baseUrl}/api/wallet/manual-topup'),
+    headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    },
+    body: jsonEncode({
+      'amount': amount,
+      'method': method,
+    }),
+  );
+
+  return jsonDecode(response.body);
+}
+
+  static Future<Map<String, dynamic>> topUp({
+  required double amount,
+  required String pin,
+}) async {
   try {
+    final token = await AuthService.getToken();
+
+    if (token == null || token.isEmpty) {
+      return {
+        'success': false,
+        'message': 'Utilisateur non connecté',
+      };
+    }
+
     final response = await http.post(
-      Uri.parse('${ApiConfig.baseUrl}/topup'),
-      headers: await _headers(),
-      body: jsonEncode({'amount': amount}),
+      Uri.parse('${ApiConfig.baseUrl}/api/wallet/topup'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'amount': amount,
+        'pin': pin,
+      }),
     );
 
-    final data = jsonDecode(response.body);
+    print('TOPUP STATUS: ${response.statusCode}');
+    print('TOPUP BODY: ${response.body}');
 
-    return {
-      'success': data['success'] == true,
-      'message': data['message'],
-      'balance': data['balance'],
-    };
+    return jsonDecode(response.body);
+  
   } catch (e) {
     return {
       'success': false,
-      'message': 'Erreur topUp: $e',
+      'message': 'Erreur topup: $e',
     };
   }
 }
 
-  // ✅ PAY SUBSCRIPTION
-  static Future<Map<String, dynamic>> paySubscription({
-    required String serviceName,
-    required double amount,
-  }) async {
-    try {
-      final headers = await _headers();
-
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/api/wallet/pay'),
-        headers: headers,
-        body: jsonEncode({
-          'amount': amount,
-          'description': serviceName,
-        }),
-      );
-
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200) {
-        return {
-          'success': true,
-          'message': data['message'] ?? 'Subscription paid successfully',
-          'newBalance': (data['balance'] ?? 0).toDouble(),
-        };
-      }
-
-      return {
-        'success': false,
-        'message': data['message'] ?? 'Payment failed',
-      };
-    } catch (e) {
-      return {
-        'success': false,
-        'message': 'Erreur paiement abonnement: $e',
-      };
-    }
-  }
-
-  // ✅ QR PAY
-  static Future<Map<String, dynamic>> qrPay({
-    required int merchantId,
-    required double amount,
-    required String pin,
-  }) async {
-    try {
-      final headers = await _headers();
-
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/api/wallet/qr-pay'),
-        headers: headers,
-        body: jsonEncode({
-          'merchantId': merchantId,
-          'amount': amount,
-          'pin': pin,
-        }),
-      );
-
-      final data = jsonDecode(response.body);
-
-      return {
-        'success': data['success'] == true,
-        'message': data['message'] ?? 'Erreur QR Pay',
-        'balance': data['balance'],
-        'transaction': data['transaction'],
-      };
-    } catch (e) {
-      return {
-        'success': false,
-        'message': 'Erreur qrPay: $e',
-      };
-    }
-  }
-
-  // ✅ SIMPLE PAY
   static Future<Map<String, dynamic>> pay({
     required double amount,
     required String pin,
-    String description = '',
+    String? description,
+    int? merchantId,
   }) async {
-    try {
-      final headers = await _headers();
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/api/wallet/pay'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'amount': amount,
+        'pin': pin,
+        'description': description ?? 'Paiement service',
+        'merchantId': merchantId,
+      }),
+    );
 
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/api/wallet/pay'),
-        headers: headers,
-        body: jsonEncode({
-          'amount': amount,
-          'description': description,
-          'pin': pin,
-        }),
-      );
-
-      final data = jsonDecode(response.body);
-
-      return {
-        'success': data['success'] == true,
-        'message': data['message'] ?? 'Erreur paiement',
-        'balance': data['balance'],
-        'transaction': data['transaction'],
-      };
-    } catch (e) {
-      return {
-        'success': false,
-        'message': 'Erreur pay: $e',
-      };
-    }
+    return jsonDecode(response.body);
   }
+  
+static Future<Map<String, dynamic>> approveManualPayment({
+  required int paymentId,
+}) async {
+  final token = await AuthService.getToken();
 
-  // ✅ TRANSFER
-  static Future<Map<String, dynamic>> transfer({
-    required String receiverPhone,
-    required double amount,
-    required String pin,
-  }) async {
-    try {
-      final headers = await _headers();
+  final response = await http.post(
+    Uri.parse('${ApiConfig.baseUrl}/api/admin/transactions/$paymentId/approve'),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    },
+  );
 
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/api/wallet/transfer'),
-        headers: headers,
-        body: jsonEncode({
-          'receiverPhone': receiverPhone,
-          'amount': amount,
-          'pin': pin,
-        }),
-      );
+  return jsonDecode(response.body);
+}
 
-      final data = jsonDecode(response.body);
+  static Future<Map<String, dynamic>> manualPayment({
+  required String method,
+  required double amount,
+  required String reference,
+  required String pin,
+}) async {
+  try {
+    final token = await AuthService.getToken();
 
-      return {
-        'success': data['success'] == true,
-        'message': data['message'] ?? 'Erreur transfert',
-        'reference': data['reference'],
-        'transaction': data['transaction'],
-        'balance': data['balance'],
-      };
-    } catch (e) {
-      return {
-        'success': false,
-        'message': 'Erreur transfert: $e',
-      };
-    }
-  }
+    final response = await http.post(
+  Uri.parse('${ApiConfig.baseUrl}/api/wallet/manual-payment'),
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer $token',
+  },
 
-  // ✅ VERIFY NUMBER
-  static Future<Map<String, dynamic>> verifyNumber(String phone) async {
-    try {
-      final headers = await _headers();
+  
+  body: jsonEncode({
+    'method': method,
+    'amount': amount,
+    'reference': reference,
+    'pin': pin,
+  }),
+);
 
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/api/wallet/verify-number'),
-        headers: headers,
-        body: jsonEncode({
-          'phone': phone,
-        }),
-      );
+ 
 
-      final data = jsonDecode(response.body);
+    print("RESPONSE: ${response.body}");
 
-      return {
-        'success': data['success'] == true,
-        'message': data['message'] ?? '',
-        'name': data['name'] ?? '',
-      };
-    } catch (e) {
-      return {
-        'success': false,
-        'message': 'Erreur vérification: $e',
-        'name': '',
-      };
-    }
+    return jsonDecode(response.body);
+  } catch (e) {
+    return {
+      'success': false,
+      'message': 'Erreur: $e',
+    };
   }
 }
+static Future<Map<String, dynamic>> getManualPayments() async {
+  final token = await AuthService.getToken();
+
+  final response = await http.get(
+    Uri.parse('${ApiConfig.baseUrl}/api/admin/manual-payments'),
+    headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    },
+  );
+
+  print('ADMIN STATUS: ${response.statusCode}');
+  print('ADMIN BODY: ${response.body}');
+
+  return jsonDecode(response.body);
+}
+
+ static Future<Map<String, dynamic>> transfer({
+  required String receiverPhone,
+  required double amount,
+  required String pin,
+}) async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('token') ?? '';
+
+  final response = await http.post(
+    Uri.parse('${ApiConfig.baseUrl}/api/wallet/transfer'),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    },
+   body: jsonEncode({
+  'receiverPhone': receiverPhone,
+  'amount': amount,
+  'pin': pin,
+}),
+
+  );
+final data = jsonDecode(response.body);
+return data;
+
+  print("TRANSFER STATUS: ${response.statusCode}");
+  print("TRANSFER BODY: ${response.body}");
+
+  return jsonDecode(response.body);
+}
+ 
+static Future<Map<String, dynamic>> validateManualPayment({
+  required int paymentId,
+}) async {
+  final token = await AuthService.getToken();
+
+  final response = await http.post(
+    Uri.parse('${ApiConfig.baseUrl}/api/admin/manual-payments/$paymentId/validate'),
+    headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    },
+  );
+
+  return jsonDecode(response.body);
+}
+
+static Future<Map<String, dynamic>> rejectManualPayment({
+  required int paymentId,
+}) async {
+  final token = await AuthService.getToken();
+
+  final response = await http.post(
+    Uri.parse('${ApiConfig.baseUrl}/api/admin/manual-payments/$paymentId/reject'),
+    headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    },
+  );
+
+  return jsonDecode(response.body);
+}
+
+}
+
+

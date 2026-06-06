@@ -42,5 +42,49 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+<script>
+  window.initHlsPlayer = function (videoId, url) {
+    const video = document.getElementById(videoId);
+    if (!video) {
+      console.error("Video not found");
+      return;
+    }
+
+    console.log("INIT HLS:", videoId, url);
+
+    if (video._hls) {
+      video._hls.destroy();
+      video._hls = null;
+    }
+
+    if (window.Hls && Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+      });
+
+      video._hls = hls;
+
+      hls.loadSource(url);
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, function () {
+        console.log("HLS READY");
+        video.play();
+      });
+
+      hls.on(Hls.Events.ERROR, function (event, data) {
+        console.error("HLS ERROR:", data);
+      });
+
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = url;
+      video.play();
+    } else {
+      console.error("HLS not supported");
+    }
+  };
+</script>
 </body>
 </html>

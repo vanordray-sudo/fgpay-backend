@@ -1,6 +1,8 @@
+import 'dart:convert';
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
-import '../services/stripe_service.dart';
+import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 
 class StripePaymentPage extends StatefulWidget {
   const StripePaymentPage({super.key});
@@ -10,29 +12,65 @@ class StripePaymentPage extends StatefulWidget {
 }
 
 class _StripePaymentPageState extends State<StripePaymentPage> {
+  final TextEditingController amountController = TextEditingController();
   bool isLoading = false;
 
-  Future<void> handlePayment() async {
+  Future<void> startStripePayment() async {
+    final amountText = amountController.text.trim();
+    final amount = double.tryParse(amountText);
+
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Montant invalide')),
+      );
+      return;
+    }
+
     setState(() {
       isLoading = true;
     });
 
-    final url = await StripeService.createCheckoutSession(
-      serviceName: 'FGPay IPTV',
-      amount: 9.99,
-    );
-
-    setState(() {
-      isLoading = false;
-    });
-
-    if (url != null && url.isNotEmpty) {
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erreur Stripe')),
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/stripe/create-checkout-session'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'serviceName': 'FGPay Recharge',
+          'amount': amount,
+          'currency': 'eur',
+          'userId': 3,
+        }),
       );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        final checkoutUrl = data['checkoutUrl'];
+
+        if (checkoutUrl != null && checkoutUrl.toString().isNotEmpty) {
+          html.window.location.href = checkoutUrl.toString();
+        } else {
+          throw 'Impossible d’ouvrir Stripe';
+        }
+      } else {
+        throw data['message'] ?? 'Erreur création session Stripe';
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e')),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        isLoading = false;
+      });
     }
+  }
+
+  @override
+  void dispose() {
+    amountController.dispose();
+    super.dispose();
   }
 
   @override
@@ -41,13 +79,31 @@ class _StripePaymentPageState extends State<StripePaymentPage> {
       appBar: AppBar(
         title: const Text('Paiement Stripe'),
       ),
-      body: Center(
-        child: isLoading
-            ? const CircularProgressIndicator()
-            : ElevatedButton(
-                onPressed: handlePayment,
-                child: const Text('Peye ak kat 💳'),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            TextField(
+              controller: amountController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Montant (€)',
+                border: OutlineInputBorder(),
               ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: isLoading ? null : startStripePayment,
+                child: isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text('Payer avec Stripe'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

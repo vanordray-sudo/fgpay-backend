@@ -1,6 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
 import '../services/auth_service.dart';
 import 'main_entry_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'professional_pending_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -13,18 +18,18 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
+  bool obscurePassword = true;
   bool isLoading = false;
   bool isCheckingSession = true;
-  bool obscurePassword = true;
   String errorMessage = '';
 
   @override
   void initState() {
     super.initState();
-    checkSession();
+    _checkExistingSession();
   }
 
-  Future<void> checkSession() async {
+  Future<void> _checkExistingSession() async {
     final loggedIn = await AuthService.isLoggedIn();
 
     if (!mounted) return;
@@ -32,9 +37,7 @@ class _LoginPageState extends State<LoginPage> {
     if (loggedIn) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (_) => const MainEntryPage(),
-        ),
+        MaterialPageRoute(builder: (_) => const MainEntryPage()),
       );
       return;
     }
@@ -43,46 +46,98 @@ class _LoginPageState extends State<LoginPage> {
       isCheckingSession = false;
     });
   }
-Future<void> handleLogin() async {
-  final phone = phoneController.text.trim();
-  final password = passwordController.text.trim();
 
-  if (phone.isEmpty || password.isEmpty) {
+  Future<void> handleLogin() async {
     setState(() {
-      errorMessage = 'Tanpri ranpli tout chan yo';
+      isLoading = true;
+      errorMessage = '';
     });
-    return;
-  }
 
-  setState(() {
-    isLoading = true;
-    errorMessage = '';
-  });
+    try {
+      final response = await http.post(
+        Uri.parse('http://localhost:3000/login'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'phone': phoneController.text.trim(),
+          'password': passwordController.text.trim(),
+        }),
+      );
+ print('RAW RESPONSE = ${response.body}');
 
-  final result = await AuthService.login(
-    phone: phone,
-    password: password,
+      final data = jsonDecode(response.body);
+
+      print('LOGIN RESPONSE = $data');
+print('USER RESPONSE = ${data['user']}');
+
+    if (response.statusCode == 200 && data['success'] == true) {
+
+  final prefs = await SharedPreferences.getInstance();
+
+await prefs.setString('token', data['token']);
+await prefs.setString('user', jsonEncode(data['user']));
+
+print('TOKEN SAVED: ${data['token']}');
+
+  // 🔥 SAVE TOKEN DIRÈK
+
+  print('TOKEN SAVED: ${data['token']}');
+
+print('LOGIN RESPONSE = $data');
+print('USER RESPONSE = ${data['user']}');
+
+ await AuthService.saveSession(
+  data['token'],
+  Map<String, dynamic>.from(data['user']),
+);
+
+final user = Map<String, dynamic>.from(data['user']);
+
+print('HEALTH ROLE = ${user['health_role']}');
+print('PRO STATUS = ${user['professional_status']}');
+print('VERIFIED = ${user['is_verified_professional']}');
+
+if (
+    user['health_role'] == 'doctor' &&
+    user['professional_status'] != 'approved'
+) {
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (_) => const ProfessionalPendingPage(),
+    ),
   );
-
-  if (!mounted) return;
-
-  setState(() {
-    isLoading = false;
-  });
-
-  if (result['success'] == true) {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const MainEntryPage(),
-      ),
-    );
-  } else {
-    setState(() {
-      errorMessage = result['message'] ?? 'Login echwe';
-    });
-  }
+  return;
 }
+
+if (!mounted) return;
+
+Navigator.pushReplacement(
+  context,
+  MaterialPageRoute(
+    builder: (_) => const MainEntryPage(),
+  ),
+);
+
+} else {
+  setState(() {
+    errorMessage = data['message'] ?? 'Login echwe';
+  });
+} 
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Erreur login: $e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
     phoneController.dispose();
@@ -113,9 +168,9 @@ Future<void> handleLogin() async {
         ),
         const SizedBox(height: 20),
         const Text(
-          'Bienvenue sou FGPay',
+          'Byenvini sou FGPay',
           style: TextStyle(
-            fontSize: 28,
+            fontSize: 22,
             fontWeight: FontWeight.w900,
             color: Colors.black87,
           ),
@@ -123,7 +178,7 @@ Future<void> handleLogin() async {
         ),
         const SizedBox(height: 8),
         const Text(
-          'Connecte-toi pou jere lajan ou an sekirite',
+          'konektew, pou jere lajan ou an sekirite',
           style: TextStyle(
             fontSize: 14,
             color: Colors.black54,
@@ -140,7 +195,6 @@ Future<void> handleLogin() async {
       keyboardType: TextInputType.phone,
       decoration: InputDecoration(
         labelText: 'Téléphone',
-        hintText: '50911111111',
         prefixIcon: const Icon(Icons.phone),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -155,7 +209,6 @@ Future<void> handleLogin() async {
       obscureText: obscurePassword,
       decoration: InputDecoration(
         labelText: 'Mot de passe',
-        hintText: '123456',
         prefixIcon: const Icon(Icons.lock),
         suffixIcon: IconButton(
           onPressed: () {
@@ -177,7 +230,6 @@ Future<void> handleLogin() async {
   Widget buildLoginButton() {
     return SizedBox(
       width: double.infinity,
-      height: 56,
       child: ElevatedButton(
         onPressed: isLoading ? null : handleLogin,
         style: ElevatedButton.styleFrom(
@@ -186,21 +238,20 @@ Future<void> handleLogin() async {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          elevation: 0,
+          padding: const EdgeInsets.symmetric(vertical: 16),
         ),
         child: isLoading
             ? const SizedBox(
                 width: 22,
                 height: 22,
                 child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
+                  strokeWidth: 2.4,
                   color: Colors.white,
                 ),
               )
             : const Text(
                 'Login',
                 style: TextStyle(
-                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -210,7 +261,6 @@ Future<void> handleLogin() async {
 
   Widget buildDemoUsers() {
     return Container(
-      width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FBFF),
@@ -286,7 +336,6 @@ Future<void> handleLogin() async {
                         errorMessage,
                         style: const TextStyle(
                           color: Colors.red,
-                          fontSize: 14,
                         ),
                       ),
                     ),

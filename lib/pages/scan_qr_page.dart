@@ -1,14 +1,14 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import '../services/wallet_service.dart';
+import 'pay_page.dart';
 
 class ScanQrPage extends StatefulWidget {
-  final Future<void> Function() onPaymentDone;
+  final Future<void> Function()? onPaymentDone;
 
   const ScanQrPage({
     super.key,
-    required this.onPaymentDone,
+    this.onPaymentDone,
   });
 
   @override
@@ -16,147 +16,109 @@ class ScanQrPage extends StatefulWidget {
 }
 
 class _ScanQrPageState extends State<ScanQrPage> {
-  bool _handled = false;
+  final MobileScannerController _controller = MobileScannerController();
+  bool _isProcessing = false;
 
-  Future<void> _handleQr(String rawValue) async {
-    if (_handled) return;
-    _handled = true;
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<void> _showEsimDialog(String code) async {
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('eSIM détectée'),
+        content: SelectableText(
+          'Sa a se yon QR eSIM.\n\n'
+          'Pou aktive li:\n'
+          '1. Ale nan Paramètres telefòn ou\n'
+          '2. Chèche Mobile Network / Données cellulaires\n'
+          '3. Chwazi Ajouter eSIM\n'
+          '4. Scanner QR sa a\n\n'
+          'Code:\n$code',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openPayPage(Map<String, dynamic> data) async {
+    final merchantIdRaw = data['merchantId'];
+    final merchantNameRaw = data['merchantName'];
+    final amountRaw = data['amount'];
+
+    if (merchantIdRaw == null || amountRaw == null) {
+      throw Exception('QR paiement incomplet');
+    }
+
+    final int merchantId = int.parse(merchantIdRaw.toString());
+    final String merchantName = merchantNameRaw?.toString() ?? 'Merchant';
+    final double amount = double.parse(amountRaw.toString());
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PayPage(
+          merchantId: merchantId,
+          merchantName: merchantName,
+          amount: amount,
+        ),
+      ),
+    );
+
+    if (widget.onPaymentDone != null) {
+      await widget.onPaymentDone!();
+    }
+  }
+
+  Future<void> _handleScan(String code) async {
+    if (_isProcessing) return;
+    if (code.isEmpty) {
+      _showError('QR invalide');
+      return;
+    }
+
+    _isProcessing = true;
 
     try {
-      final data = jsonDecode(rawValue);
-
-      if (data['type'] != 'fgpay_qr') {
-        throw Exception('QR FGPay pa valab');
-      }
-
-      final merchantId = data['merchantId'];
-      final merchantName = (data['merchantName'] ?? 'Merchant').toString();
-      final qrAmount = data['amount'];
-
-      if (!mounted) return;
-
-      final amountController = TextEditingController(
-        text: qrAmount == null ? '' : qrAmount.toString(),
-      );
-
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('QR Pay'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Merchant: $merchantName'),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: amountController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Montant',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Annuler'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Kontinye'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (confirmed != true) {
-        if (mounted) Navigator.pop(context);
+      // QR eSIM
+      if (code.startsWith('LPA:1\$')) {
+        await _showEsimDialog(code);
         return;
       }
 
-      final amount = double.tryParse(amountController.text.trim());
+      // QR paiement FGPay
+      final dynamic decoded = jsonDecode(code);
 
-      if (amount == null || amount <= 0) {
-        throw Exception('Montant invalide');
+      if (decoded is! Map<String, dynamic>) {
+        throw Exception('QR non reconnu');
       }
 
-      if (!mounted) return;
-
-      final pinController = TextEditingController();
-
-      final pin = await showDialog<String>(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('PIN Sécurité'),
-            content: TextField(
-              controller: pinController,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Entrez votre PIN',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Annuler'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, pinController.text.trim()),
-                child: const Text('Valider'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (pin == null || pin.isEmpty) {
-        if (mounted) Navigator.pop(context);
-        return;
+      if (decoded['type'] != 'fgpay_qr') {
+        throw Exception('QR pa valab pou paiement');
       }
 
-      final result = await WalletService.qrPay(
-        merchantId: merchantId,
-        amount: amount,
-        pin: pin,
-      );
-
-      if (!mounted) return;
-
-      if (result['success'] == true) {
-        await widget.onPaymentDone();
-
-        if (!mounted) return;
-        Navigator.pop(context);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Paiement QR réussi: -${amount.toStringAsFixed(2)} HTG',
-            ),
-          ),
-        );
-      } else {
-        _handled = false;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text((result['message'] ?? 'Erreur QR Pay').toString()),
-          ),
-        );
-      }
+      await _openPayPage(decoded);
     } catch (e) {
-      _handled = false;
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('QR invalide: $e')),
-      );
+      _showError('Erreur scan: $e');
+    } finally {
+      _isProcessing = false;
     }
   }
 
@@ -164,16 +126,47 @@ class _ScanQrPageState extends State<ScanQrPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Scanner QR'),
+        title: const Text('Scan QR'),
       ),
-      body: MobileScanner(
-        onDetect: (capture) {
-          final barcode = capture.barcodes.first;
-          final rawValue = barcode.rawValue;
-          if (rawValue != null) {
-            _handleQr(rawValue);
-          }
-        },
+      body: Stack(
+        children: [
+          MobileScanner(
+            controller: _controller,
+            onDetect: (BarcodeCapture capture) {
+              final barcodes = capture.barcodes;
+              if (barcodes.isEmpty) return;
+
+              final String? code = barcodes.first.rawValue;
+              if (code == null || code.trim().isEmpty) {
+                _showError('QR vide');
+                return;
+              }
+
+              _handleScan(code.trim());
+            },
+          ),
+
+          Positioned(
+            left: 24,
+            right: 24,
+            bottom: 30,
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.65),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Text(
+                'Scan yon QR paiement FGPay oswa yon QR eSIM.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

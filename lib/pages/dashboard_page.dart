@@ -7,6 +7,22 @@ import 'qr_pay_page.dart';
 import 'scan_qr_page.dart';
 import 'iptv_page.dart';
 import 'stripe_payment_page.dart';
+import 'esim_page.dart';
+import 'starlink_page.dart';
+import 'main_entry_page.dart';
+import 'paypal_payment_page.dart';
+import 'live_tv_page.dart';
+import 'internet_page.dart';
+import 'my_esim_page.dart';
+import 'receipt_page.dart';
+import 'payment_methods_page.dart';
+import 'admin_payments_page.dart';
+import 'notifications_page.dart';
+import 'dart:async';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'health_page.dart';
+
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -16,9 +32,14 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  double balance = 0;
-  List<Map<String, dynamic>> transactions = [];
   bool isLoading = true;
+  int notificationCount = 0;
+  Timer? _notificationTimer; 
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
+  double balance = 0.0;
+  List<Map<String, dynamic>> transactions = [];
+
   String errorMessage = '';
 
   String userName = '';
@@ -31,12 +52,245 @@ class _DashboardPageState extends State<DashboardPage> {
   final double usdRate = 132.0;
   final double eurRate = 145.0;
 
-  @override
-  void initState() {
-    super.initState();
-    loadData();
+
+  double safeDouble(dynamic value) {
+  if (value == null) return 0.0;
+  if (value is num) return value.toDouble();
+  return double.tryParse(value.toString()) ?? 0.0;
+}
+
+ double getConvertedBalance() {
+  switch (selectedCurrency) {
+    case 'USD':
+      return balance / 132;
+    case 'EUR':
+      return balance / 145;
+    case 'HTG':
+    default:
+      return balance;
+  }
+}
+  
+  String getTransactionTitle(Map<String, dynamic> tx) {
+  final type = (tx['type'] ?? '').toString().toLowerCase();
+  final description = (tx['description'] ?? '').toString().trim();
+  final receiver = (tx['receiver_name'] ?? tx['receiver'] ?? '').toString().trim();
+  final sender = (tx['sender_name'] ?? tx['sender'] ?? '').toString().trim();
+
+  if (description.isNotEmpty) return description;
+
+  switch (type) {
+    case 'topup':
+    case 'cashin':
+    case 'cash_in':
+      return 'Cash In';
+    case 'payment':
+    case 'pay':
+      return 'Payment';
+    case 'transfer':
+      if (receiver.isNotEmpty) return 'Transfer to $receiver';
+      return 'Transfer';
+    case 'received':
+      if (sender.isNotEmpty) return 'Received from $sender';
+      return 'Money Received';
+    default:
+      return 'Transaction';
+  }
+}
+
+String getTransactionSubtitle(Map<String, dynamic> tx) {
+  final rawDate = tx['created_at'] ?? tx['date'] ?? '';
+  if (rawDate.toString().isEmpty) return 'Date indisponible';
+
+  try {
+    final date = DateTime.parse(rawDate.toString()).toLocal();
+    return '${date.day.toString().padLeft(2, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/'
+        '${date.year}  '
+        '${date.hour.toString().padLeft(2, '0')}:'
+        '${date.minute.toString().padLeft(2, '0')}';
+  } catch (_) {
+    return rawDate.toString();
+  }
+}
+
+bool isPositiveTransaction(Map<String, dynamic> tx) {
+  final type = (tx['type'] ?? '').toString().toLowerCase();
+  return type == 'topup' ||
+      type == 'cashin' ||
+      type == 'cash_in' ||
+      type == 'received' ||
+      type == 'deposit';
+}
+
+IconData getTransactionIcon(Map<String, dynamic> tx) {
+  final type = (tx['type'] ?? '').toString().toLowerCase();
+
+ switch (type) {
+  case 'topup':
+  case 'cashin':
+  case 'cash_in':
+  case 'received':
+  case 'deposit':
+    return Icons.arrow_downward_rounded; // 💚 incoming
+
+  case 'payment':
+  case 'pay':
+    return Icons.shopping_cart_rounded; // 🛒 paiement
+
+  case 'transfer':
+    return Icons.send_rounded; // 📤 envoi
+
+  case 'qr':
+    return Icons.qr_code_rounded; // 🔳 QR
+
+  default:
+    return Icons.receipt_long_rounded; // 🧾 fallback
+}
+}
+
+Color getTransactionColor(Map<String, dynamic> tx) {
+  final type = (tx['type'] ?? '').toString().toLowerCase();
+
+  if (type.contains('cash') ||
+      type.contains('deposit') ||
+      type.contains('received')) {
+    return Colors.green;
   }
 
+  if (type.contains('transfer')) {
+    return Colors.orange;
+  }
+
+  if (type.contains('payment') || type.contains('pay')) {
+    return Colors.red;
+  }
+
+  return Colors.grey;
+}
+
+String getTransactionAmountText(Map<String, dynamic> tx) {
+  final rawAmount = tx['amount'] ?? 0;
+  final amount = double.tryParse(rawAmount.toString()) ?? 0.0;
+  final prefix = isPositiveTransaction(tx) ? '+' : '-';
+  return '$prefix${amount.toStringAsFixed(2)} HTG';
+}
+ 
+ Future<String?> _askSecurityPin() async {
+  final pinController = TextEditingController();
+
+  return showDialog<String>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text('PIN Sécurité'),
+        content: TextField(
+          controller: pinController,
+          obscureText: true,
+          keyboardType: TextInputType.number,
+          maxLength: 6,
+          decoration: const InputDecoration(
+            labelText: 'Entrez votre PIN',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final pin = pinController.text.trim();
+
+              if (pin.isEmpty || pin.length < 6) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('PIN invalide')),
+                );
+                return;
+              }
+
+              Navigator.pop(context, pin);
+            },
+            child: const Text('Valider'),
+          ),
+        ],
+      );
+    },
+  );
+}
+ 
+ Widget buildCurrencyChip(String currency) {
+  final isSelected = selectedCurrency == currency;
+
+  return GestureDetector(
+    onTap: () {
+      setState(() {
+        selectedCurrency = currency;
+      });
+    },
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: isSelected ? Colors.white : Colors.white24,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        currency,
+        style: TextStyle(
+          color: isSelected ? Colors.blue : Colors.white,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    ),
+  );
+}
+
+void initState() {
+  super.initState();
+  _boot();
+  startNotificationPolling();
+
+  _initFirebase();
+}
+
+Future<void> _initFirebase() async {
+  final token = await FirebaseMessaging.instance.getToken();
+  print('TOKEN: $token');
+
+  if (token != null) {
+    await WalletService.saveFcmToken(token);
+  }
+}
+
+Future<void> _boot() async {
+  final loggedIn = await AuthService.isLoggedIn();
+
+  if (!loggedIn) {
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+      (route) => false,
+    );
+    return;
+  }
+
+  await loadData();
+}
+
+ void startNotificationPolling() {
+  _notificationTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+    final count = await WalletService.getUnreadNotificationCount();
+
+    if (!mounted) return;
+
+    setState(() {
+      notificationCount = count;
+    });
+  });
+}
+  
   void openMyQr() {
     Navigator.push(
       context,
@@ -60,39 +314,77 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Future<void> loadData() async {
+ Future<void> fetchBalance() async {
+  print('CALL fetchBalance');
+  final data = await WalletService.getBalance();
+  print('BALANCE RESPONSE: $data');
+
+  if (!mounted) return;
+
+  setState(() {
+    balance = data ?? balance;
+  });
+}
+
+Future<void> fetchTransactions() async {
+  print('CALL fetchTransactions');
+  final data = await WalletService.getTransactions();
+  print('TRANSACTIONS RESPONSE: $data');
+
+  if (!mounted) return;
+
+  setState(() {
+    transactions = List<Map<String, dynamic>>.from(data);
+  });
+}
+ 
+ Future<void> loadData() async {
+  if (!mounted) return;
+
+  setState(() => isLoading = true);
+
+  try {
+  final newBalance = (await WalletService.getBalance()) ?? 0.0;
+
+final newTransactions = List<Map<String, dynamic>>.from(
+  await WalletService.getTransactions(),
+);
+    if (!mounted) return;
+
     setState(() {
-      isLoading = true;
-      errorMessage = '';
+      balance = newBalance;
+      transactions = newTransactions;
     });
 
-    try {
-      final currentUser = await AuthService.getCurrentUser();
-      final loadedBalance = await WalletService.getBalance();
-      final loadedTransactions = await WalletService.getTransactions();
+  } catch (e) {
+    final msg = e.toString();
+
+    if (msg.contains('SESSION_EXPIRED') || msg.contains('Token')) {
+      if (!mounted) return;
+
+      await AuthService.logout();
 
       if (!mounted) return;
 
-      setState(() {
-       userName = (currentUser['name'] ?? '').toString();
-userPhone = (currentUser['phone'] ?? '').toString();
-userEmail = (currentUser['email'] ?? '').toString();
-userNif = (currentUser['nif'] ?? '').toString();
-userAddress = (currentUser['address'] ?? '').toString();
-        balance = loadedBalance;
-        transactions = List<Map<String, dynamic>>.from(loadedTransactions);
-        isLoading = false;
-        errorMessage = '';
-      });
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        errorMessage = e.toString();
-        isLoading = false;
-      });
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (route) => false,
+      );
+      return;
     }
+
+    if (!mounted) return;
+    setState(() {
+      errorMessage = msg;
+    });
+
+  } finally {
+    if (!mounted) return;
+
+    setState(() => isLoading = false);
   }
+}
 
   double getDisplayBalance() {
     if (selectedCurrency == 'USD') {
@@ -110,16 +402,16 @@ userAddress = (currentUser['address'] ?? '').toString();
   }
 
   Future<void> handleLogout() async {
-    await AuthService.logout();
+  await AuthService.clearSession();
 
-    if (!mounted) return;
+  if (!mounted) return;
 
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (route) => false,
-    );
-  }
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(builder: (_) => LoginPage()),
+  );
+}
+
 Future<void> showTopUpDialog() async {
   final controller = TextEditingController();
 
@@ -127,9 +419,6 @@ Future<void> showTopUpDialog() async {
     context: context,
     builder: (dialogContext) {
       return AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
         title: const Text('Cash In'),
         content: TextField(
           controller: controller,
@@ -149,47 +438,55 @@ Future<void> showTopUpDialog() async {
               final amount = double.tryParse(controller.text.trim());
 
               if (amount == null || amount <= 0) {
-                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Tanpri antre yon montan valab'),
-                  ),
+                  const SnackBar(content: Text('Montant invalide')),
                 );
                 return;
               }
 
+             final pin = await _askSecurityPin();
+
+if (pin == null || pin.isEmpty) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Antre PIN la')),
+  );
+  return;
+}
+
+if (pin.length != 6) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('PIN dwe gen 4 chif')),
+  );
+  return;
+}
+              final result = await WalletService.topUp(
+                amount: amount,
+                pin: pin,
+              );
+
+              if (!mounted) return;
+
               Navigator.pop(dialogContext);
 
-              try {
-                final result = await WalletService.topUp(amount);
+              if (result['success'] == true) {
+  await loadData(); // 🔥 refresh wallet imedyatman
 
-                if (result['success'] == true) {
-                 
-                  await loadData();
+  if (!mounted) return;
 
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Cash In réussi: +${amount.toStringAsFixed(2)} HTG',
-                      ),
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        (result['message'] ?? 'Erreur top up').toString(),
-                      ),
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Erreur: $e')),
-                );
-              }
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(result['message'] ?? 'Topup réussi 💸'),
+    ),
+  );
+} else {
+  if (!mounted) return;
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(result['message'] ?? 'Erreur topup ❌'),
+    ),
+  );
+}
             },
             child: const Text('Valider'),
           ),
@@ -198,7 +495,6 @@ Future<void> showTopUpDialog() async {
     },
   );
 }
-
 Future<void> showPayDialog() async {
   final amountController = TextEditingController();
   final descriptionController = TextEditingController();
@@ -254,49 +550,12 @@ Future<void> showPayDialog() async {
                 return;
               }
 
-              final pinController = TextEditingController();
-
-              final pin = await showDialog<String>(
-                context: dialogContext,
-                builder: (pinContext) {
-                  return AlertDialog(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    title: const Text('PIN Sécurité'),
-                    content: TextField(
-                      controller: pinController,
-                      obscureText: true,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Entrez votre PIN',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(pinContext),
-                        child: const Text('Annuler'),
-                      ),
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(pinContext, pinController.text.trim());
-                        },
-                        child: const Text('Confirmer'),
-                      ),
-                    ],
-                  );
-                },
-              );
-
-              if (pin == null || pin.isEmpty) return;
-
               Navigator.pop(dialogContext);
 
               try {
                 final result = await WalletService.pay(
                   amount: amount,
-                  pin: pin,
+                  pin: '1111',
                   description: description,
                 );
 
@@ -311,19 +570,19 @@ Future<void> showPayDialog() async {
                     context,
                     MaterialPageRoute(
                       builder: (_) => ReceiptPage(
-                        senderName: userName,
-                        senderPhone: userPhone,
-                        senderNif: userNif,
-                        senderAddress: userAddress,
-                        receiverName: 'Service Payment',
-                        receiverPhone: '-',
-                        amount: amount,
-                        reference:
-                            'PAY-${DateTime.now().millisecondsSinceEpoch}',
-                        date: (result['transaction']?['date'] ?? '').toString(),
-                        transactionType: 'payment',
-                        description: description,
-                      ),
+  data: {
+    'merchantName': userName,
+    'amount': amount,
+    'baseAmount': result['baseAmount'] ?? amount,
+    'tcaAmount': result['tcaAmount'] ?? 0,
+    'fgpayCommission': result['fgpayCommission'] ?? 0,
+    'totalAmount': result['totalAmount'] ?? amount,
+    'reference': (result['reference'] ?? 'N/A').toString(),
+    'createdAt': DateTime.now().toString(),
+    'status': 'SUCCESS',
+    'description': 'Transaction FGPay',
+  },
+)
                     ),
                   );
                 } else {
@@ -350,6 +609,80 @@ Future<void> showPayDialog() async {
   );
 }
 
+Future<void> _openSubscription(String service) async {
+  final pinController = TextEditingController();
+
+  await showDialog(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+
+        title: Text('Souscrire $service'),
+        content: TextField(
+          controller: pinController,
+          keyboardType: TextInputType.number,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: 'PIN',
+          ),
+        ),
+        actions: [
+          TextButton(
+
+
+           onPressed: () {
+  Navigator.pop(context); // retounen Dashboard pou user klike Abonnement
+},
+
+            child: const Text('Annuler'),
+          ),
+
+        ElevatedButton(
+  onPressed: () async {
+    final pin = pinController.text.trim();
+
+    if (pin.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Antre PIN la')),
+      );
+      return;
+    }
+
+    try {
+      final result = await WalletService.subscribe(
+        service: service,
+        plan: 'basic',
+        amount: 10,
+        pin: pin,
+      );
+
+
+      print('SUBSCRIBE RESULT: $result');
+
+      if (!mounted) return;
+      Navigator.pop(dialogContext);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['message'] ?? 'Réponse vide')),
+      );
+    } catch (e) {
+      print('SUBSCRIBE ERROR: $e');
+
+      if (!mounted) return;
+      Navigator.pop(dialogContext);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur app: $e')),
+      );
+    }
+  },
+  child: const Text('Payer'),
+),
+        ],
+      );
+    },
+  );
+}
 Future<void> showTransferDialog() async {
   final phoneController = TextEditingController();
   final amountController = TextEditingController();
@@ -384,44 +717,8 @@ Future<void> showTransferDialog() async {
               return;
             }
 
-            final pinController = TextEditingController();
-
-            final pin = await showDialog<String>(
-              context: dialogContext,
-              builder: (pinContext) {
-                return AlertDialog(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  title: const Text('PIN Sécurité'),
-                  content: TextField(
-                    controller: pinController,
-                    obscureText: true,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Entrez votre PIN',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(pinContext),
-                      child: const Text('Annuler'),
-                    ),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(pinContext, pinController.text.trim());
-                      },
-                      child: const Text('Confirmer'),
-                    ),
-                  ],
-                );
-              },
-            );
-
-            if (pin == null || pin.isEmpty) {
-              return;
-            }
+            final pin = await _askSecurityPin();
+            if (pin == null || pin.isEmpty) return;
 
             setDialogState(() {
               isSending = true;
@@ -438,35 +735,39 @@ Future<void> showTransferDialog() async {
                 isSending = false;
               });
 
-              if (result['success'] == true) {
+                         if (result['success'] == true) {
                 Navigator.pop(dialogContext);
-                await loadData();
 
                 if (!mounted) return;
 
-                Navigator.push(
+                final receipt = result['receipt'] ?? {};
+
+                await Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => ReceiptPage(
-                      senderName: userName,
-                      senderPhone: userPhone,
-                      senderNif: userNif,
-                       senderAddress: userAddress,
-                      receiverName: receiverPhone,
-                      receiverPhone: receiverPhone,
-                      amount: amount,
-                      reference: (result['reference'] ?? 'N/A').toString(),
-                      date: (result['transaction']?['date'] ?? '').toString(),
+                      data: {
+                        'merchantName': receiverPhone,
+                        'amount': receipt['totalAmount'] ?? amount,
+                        'baseAmount': receipt['baseAmount'] ?? amount,
+                        'tcaAmount': receipt['tcaAmount'] ?? 0,
+                        'commissionAmount': receipt['commissionAmount'] ?? 0,
+                        'totalAmount': receipt['totalAmount'] ?? amount,
+                        'reference': result['reference'] ?? 'N/A',
+                        'createdAt': receipt['date'] ?? DateTime.now().toString(),
+                        'status': 'SUCCESS',
+                        'description': 'Transfert vers $receiverPhone',
+                      },
                     ),
                   ),
                 );
+
+                await loadData();
               } else {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(
-                      (result['message'] ?? 'Erreur transfert').toString(),
-                    ),
+                    content: Text(result['message'] ?? 'Erreur transfert'),
                   ),
                 );
               }
@@ -480,8 +781,7 @@ Future<void> showTransferDialog() async {
                 SnackBar(content: Text('Erreur: $e')),
               );
             }
-          }
-
+          } 
           return AlertDialog(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
@@ -528,7 +828,8 @@ Future<void> showTransferDialog() async {
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2.3),
                       )
-                    : const Text('Envoyer'),
+                  
+                  : const Text('Envoyer'),
               ),
             ],
           );
@@ -537,273 +838,226 @@ Future<void> showTransferDialog() async {
     },
   );
 }
-  Widget buildUserInfoCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE5EAF1)),
-        boxShadow: const [
-          BoxShadow(
-            blurRadius: 10,
-            offset: Offset(0, 4),
-            color: Color.fromRGBO(0, 0, 0, 0.04),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 54,
-            height: 54,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [Color(0xFF0D6EFD), Color(0xFF3FA2FF)],
-              ),
-            ),
-            child: const Icon(Icons.person, color: Colors.white, size: 28),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  userName.isEmpty ? 'Utilisateur FGPay' : userName,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Téléphone: $userPhone',
-                  style: const TextStyle(color: Colors.black54),
-                ),
-                Text(
-                  'Email: $userEmail',
-                  style: const TextStyle(color: Colors.black54),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget buildBalanceCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF2F80ED), Color(0xFF56CCF2)],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
+
+ Widget buildUserInfoCard() {
+  return Container(
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(20),
+      color: Colors.white,
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 54,
+          height: 54,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.person),
         ),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Available Balance',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            '${getDisplayBalance().toStringAsFixed(2)} ${getCurrencySymbol()}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildCurrencyChip('HTG'),
-              _buildCurrencyChip('USD'),
-              _buildCurrencyChip('EUR'),
+              Text(userName),
+              Text(userEmail),
             ],
           ),
-          const SizedBox(height: 14),
-          const Text(
-            'Secure digital payments powered by FGPay',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 14,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCurrencyChip(String currency) {
-    final bool isSelected = selectedCurrency == currency;
-
-    return InkWell(
-      onTap: () {
-        setState(() {
-          selectedCurrency = currency;
-        });
-      },
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.white24,
-          borderRadius: BorderRadius.circular(20),
         ),
-        child: Text(
-          currency,
+      ],
+    ),
+  );
+}
+ Widget buildBalanceCard() {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFF2F80ED), Color(0xFF56CCF2)],
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+      ),
+      borderRadius: BorderRadius.circular(24),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Available Balance',
           style: TextStyle(
-            color: isSelected ? Colors.blue : Colors.white,
+            color: Colors.white70,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        Text(
+          '${getConvertedBalance().toStringAsFixed(2)} $selectedCurrency',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 28,
             fontWeight: FontWeight.bold,
           ),
         ),
-      ),
-    );
+        const SizedBox(height: 12),
+
+       Row(
+  children: [
+    buildCurrencyChip('HTG'),
+    const SizedBox(width: 8),
+    buildCurrencyChip('USD'),
+    const SizedBox(width: 8),
+    buildCurrencyChip('EUR'),
+  ],
+),
+        const SizedBox(height: 14),
+
+        const Text(
+          'Secure digital payments powered by FGPay',
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 14,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+
+
+ Widget buildTransactionCard(Map<String, dynamic> tx) {
+
+  final type = (tx['type'] ?? '').toString().toLowerCase();
+
+ final amount =
+  double.tryParse((tx['amount'] ?? 0).toString()) ?? 0.0;
+
+final baseAmount =
+  double.tryParse((tx['base_amount'] ?? tx['baseAmount'] ?? 0).toString()) ?? amount;
+
+final tcaAmount =
+  double.tryParse((tx['tca_amount'] ?? tx['tcaAmount'] ?? 0).toString()) ?? 0.0;
+
+final totalAmount =
+  double.tryParse((tx['total_amount'] ?? tx['totalAmount'] ?? 0).toString()) ?? amount;
+
+  final rawDate = (tx['date'] ?? tx['created_at'] ?? '').toString();
+  final direction = (tx['direction'] ?? '').toString().toLowerCase();
+  final name = (tx['name'] ?? '').toString().trim();
+  final titleFromApi = (tx['title'] ?? '').toString().trim();
+
+  final bool isQrPayment = type == 'qr_payment' || type == 'qr';
+  final bool isCredit =
+      type == 'topup' ||
+      type == 'cashin' ||
+      type == 'cash_in' ||
+      type == 'credit_transfer' ||
+      direction == 'received';
+
+  String title;
+  if (titleFromApi.isNotEmpty) {
+    title = titleFromApi;
+  } else if (isQrPayment && name.isNotEmpty) {
+    title = 'QR Payment - $name';
+  } else if (isQrPayment) {
+    title = 'QR Payment';
+  } else if (type == 'topup' || type == 'cashin' || type == 'cash_in') {
+    title = 'Cash In';
+  } else if (type == 'payment' || type == 'pay') {
+    title = 'Payment';
+  } else if (type == 'transfer' && name.isNotEmpty) {
+    title = 'Transfer to $name';
+  } else if (direction == 'received' && name.isNotEmpty) {
+    title = 'Received from $name';
+  } else if (type == 'transfer') {
+    title = 'Transfer';
+  } else {
+    title = isCredit ? 'Cash In' : 'Payment';
   }
 
-  Widget buildTransactionCard(Map<String, dynamic> tx) {
-    final type = (tx['type'] ?? '').toString().toLowerCase();
-    final amountValue = tx['amount'];
-    final amountText = amountValue == null ? '0.00' : amountValue.toString();
-
-    final rawDate = (tx['date'] ?? tx['created_at'] ?? '').toString();
-    final direction = (tx['direction'] ?? '').toString().toLowerCase();
-    final name = (tx['name'] ?? '').toString();
-    final titleFromApi = (tx['title'] ?? '').toString();
-
-    final bool isCredit =
-        type == 'topup' || type == 'credit_transfer' || direction == 'received';
-
-    String title;
-    if (titleFromApi.isNotEmpty) {
-      title = titleFromApi;
-    } else if (type == 'topup') {
-      title = 'Cash In';
-    } else if (type == 'payment') {
-      title = 'Payment';
-    } else if (direction == 'received') {
-      title = name.isNotEmpty ? 'Received from $name' : 'Received Money';
-    } else if (type == 'transfer') {
-      title = name.isNotEmpty ? 'Send Money to $name' : 'Send Money';
-    } else {
-      title = 'Transaction';
+  String subtitle = 'Date indisponible';
+  if (rawDate.isNotEmpty) {
+    try {
+      final date = DateTime.parse(rawDate).toLocal();
+      subtitle =
+          '${date.day.toString().padLeft(2, '0')}/'
+          '${date.month.toString().padLeft(2, '0')}/'
+          '${date.year}  '
+          '${date.hour.toString().padLeft(2, '0')}:'
+          '${date.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      subtitle = rawDate;
     }
-
-    String formattedDate = rawDate;
-    if (rawDate.contains('T')) {
-      formattedDate = rawDate.split('T').first;
-    } else if (rawDate.contains(' ')) {
-      formattedDate = rawDate.split(' ').first;
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE5EAF1)),
-        boxShadow: const [
-          BoxShadow(
-            blurRadius: 10,
-            offset: Offset(0, 4),
-            color: Color.fromRGBO(0, 0, 0, 0.03),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: isCredit
-                  ? const Color(0xFFE8F8EE)
-                  : const Color(0xFFFFECEC),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(
-              isCredit ? Icons.arrow_downward : Icons.arrow_upward,
-              color: isCredit ? Colors.green : Colors.red,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  formattedDate,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '${isCredit ? '+' : '-'}$amountText HTG',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: isCredit ? Colors.green : Colors.red,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: isCredit
-                      ? const Color(0xFFE8F8EE)
-                      : const Color(0xFFFFECEC),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  isCredit ? 'Credit' : 'Debit',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: isCredit ? Colors.green : Colors.red,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
   }
+
+  final String amountText;
+  if (isQrPayment) {
+    amountText = '-${totalAmount.toStringAsFixed(2)} HTG';
+  } else {
+    amountText = '${isCredit ? '+' : '-'}${amount.toStringAsFixed(2)} HTG';
+  }
+
+  final String detailsText = isQrPayment
+      ? 'Montant: ${baseAmount.toStringAsFixed(2)} HTG • '
+        'TCA: ${tcaAmount.toStringAsFixed(2)} HTG • '
+        'Total: ${totalAmount.toStringAsFixed(2)} HTG'
+      : subtitle;
+
+  return ListTile(
+    contentPadding: EdgeInsets.zero,
+    leading: CircleAvatar(
+      backgroundColor: isCredit
+          ? Colors.green.withOpacity(0.12)
+          : Colors.red.withOpacity(0.12),
+      child: Icon(
+        isCredit ? Icons.add : Icons.qr_code_2,
+        color: isCredit ? Colors.green : Colors.red,
+      ),
+    ),
+    title: Text(
+      title,
+      style: const TextStyle(
+        fontWeight: FontWeight.w600,
+        fontSize: 15,
+      ),
+    ),
+    subtitle: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          subtitle,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Colors.black54,
+          ),
+        ),
+        if (isQrPayment)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              detailsText,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Colors.black54,
+              ),
+            ),
+          ),
+      ],
+    ),
+    trailing: Text(
+      amountText,
+      style: TextStyle(
+        fontWeight: FontWeight.bold,
+        color: isCredit ? Colors.green : Colors.red,
+      ),
+    ),
+  );
+}
 
  // 👇 METE SA NAN CLASS LA, MEN DEYÒ build()
 
@@ -842,13 +1096,16 @@ Widget _buildPayDialog() {
         onPressed: () async {
           final amount = double.tryParse(amountController.text) ?? 0;
           final description = descriptionController.text.trim();
-          final pin = pinController.text.trim();
+          
 
-          final result = await WalletService.pay(
-            amount: amount,
-            pin: pin,
-            description: description,
-          );
+          final pin = await _askSecurityPin();
+if (pin == null) return;
+
+final result = await WalletService.pay(
+  amount: amount,
+  description: description,
+  pin: pin,
+);
 
           if (!context.mounted) return;
 
@@ -868,524 +1125,409 @@ Widget _buildPayDialog() {
   );
 }
  
-  Widget buildDashboardContent() {
-    return Padding(
-      padding: const EdgeInsets.all(22),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 980),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Bienvenue sou FGPay 🚀',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.black87,
-                  ),
+  Widget _buildServiceButton({
+  required IconData icon,
+  required String label,
+  required String subtitle,
+  required VoidCallback onTap,
+  Color iconColor = Colors.blue,
+  double width = 150,
+}) {
+  return InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(16),
+    child: Container(
+      width: width,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 6,
+            offset: Offset(0, 2),
+            color: Color(0x14000000),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: iconColor, size: 30),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.grey,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+  
+ Widget buildDashboardContent() {
+  return Padding(
+    padding: const EdgeInsets.all(22),
+    child: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 980),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Byenvini sou FGPay , Nou kontan wè ou🚀',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.black87,
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Your secure digital payment dashboard',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.black54,
-                  ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Your secure digital payment dashboard',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.black54,
                 ),
-                const SizedBox(height: 20),
+              ),
+              const SizedBox(height: 20),
 
-                buildUserInfoCard(),
-                const SizedBox(height: 20),
+              buildUserInfoCard(),
+              const SizedBox(height: 20),
 
-                buildBalanceCard(),
-                const SizedBox(height: 20),
+              buildBalanceCard(),
+              const SizedBox(height: 20),
 
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 16,
-                  alignment: WrapAlignment.start,
-                  children: [
-                    InkWell(
-                      onTap: showTopUpDialog,
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        width: 150,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: const [
-                            BoxShadow(
-                              blurRadius: 6,
-                              offset: Offset(0, 2),
-                              color: Color(0x14000000),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.account_balance_wallet,
-                                color: Colors.blue, size: 30),
-                            SizedBox(height: 10),
-                            Text(
-                              'Cash In',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              'Recharge wallet',
-                              textAlign: TextAlign.center,
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
 
-                    InkWell(
-                      onTap: showTransferDialog,
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        width: 150,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: const [
-                            BoxShadow(
-                              blurRadius: 6,
-                              offset: Offset(0, 2),
-                              color: Color(0x14000000),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.send, color: Colors.blue, size: 30),
-                            SizedBox(height: 10),
-                            Text(
-                              'Send Money',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              'Transfer funds',
-                              textAlign: TextAlign.center,
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
 
-     InkWell(
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                alignment: WrapAlignment.start,
+                children: [
+                  _buildServiceButton(
+  icon: Icons.wifi,
+  label: 'Internet',
+  subtitle: 'Forfaits data',
   onTap: () {
-    showDialog(
-      context: context,
-      builder: (_) => _buildPayDialog(),
+    _openSubscription('internet');
+  },
+),
+
+_buildServiceButton(
+  icon: Icons.live_tv,
+  label: 'IPTV',
+  subtitle: 'TV en direct',
+  onTap: () {
+    _openSubscription('iptv');
+  },
+),
+
+_buildServiceButton(
+  icon: Icons.card_membership,
+  label: 'Abonnement',
+  subtitle: 'Activer IPTV',
+  onTap: () {
+    _openSubscription('iptv');
+  },
+),
+                  _buildServiceButton(
+                    icon: Icons.account_balance_wallet,
+                    label: 'Cash In',
+                    subtitle: 'Recharge wallet',
+                    onTap: () async {
+                      final amountController = TextEditingController();
+
+                      final amount = await showDialog<double>(
+                        context: context,
+                        builder: (context) {
+                          return AlertDialog(
+                            title: const Text('Cash In'),
+                            content: TextField(
+                              controller: amountController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'Montant',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('Annuler'),
+                              ),
+                              ElevatedButton(
+                                onPressed: () {
+                                  final value = double.tryParse(
+                                    amountController.text.trim(),
+                                  );
+                                  Navigator.pop(context, value);
+                                },
+                                child: const Text('Valider'),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+
+                      if (amount == null || amount <= 0) return;
+
+                      final pin = await _askSecurityPin();
+                      if (pin == null) return;
+
+                      final result = await WalletService.topUp(
+                        amount: amount,
+                        pin: pin,
+                      );
+
+                      if (!mounted) return;
+
+                      if (result['success'] == true) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Cash In réussi ✅'),
+                          ),
+                        );
+                        await loadData();
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              result['message'] ?? 'Erreur Cash In',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                  _buildServiceButton(
+                    icon: Icons.send,
+                    label: 'Send Money',
+                    subtitle: 'Transfer funds',
+                    onTap: showTransferDialog,
+                  ),
+                  _buildServiceButton(
+  icon: Icons.admin_panel_settings,
+  label: 'Admin',
+  subtitle: 'Paiements',
+  onTap: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const AdminPaymentsPage(),
+      ),
     );
   },
-  borderRadius: BorderRadius.circular(16),
-  child: Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.05),
-          blurRadius: 6,
-          offset: const Offset(0, 3),
-        ),
-      ],
-    ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: const [
-        Icon(Icons.payment, color: Colors.blue, size: 30),
-        SizedBox(height: 10),
-        Text(
-          "Pay",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        SizedBox(height: 6),
-        Text(
-          "Pay services",
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 12, color: Colors.grey),
-        ),
-      ],
-    ),
-  ),
 ),
-                    InkWell(
-                      onTap: openMyQr,
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        width: 150,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: const [
-                            BoxShadow(
-                              blurRadius: 6,
-                              offset: Offset(0, 2),
-                              color: Color(0x14000000),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.qr_code, color: Colors.blue, size: 30),
-                            SizedBox(height: 10),
-                            Text(
-                              'QR Pay',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              'Pay with QR',
-                              textAlign: TextAlign.center,
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
 
-                    InkWell(
-                      onTap: openScanQr,
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        width: 150,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: const [
-                            BoxShadow(
-                              blurRadius: 6,
-                              offset: Offset(0, 2),
-                              color: Color(0x14000000),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.qr_code_scanner,
-                                color: Colors.blue, size: 30),
-                            SizedBox(height: 10),
-                            Text(
-                              'Scan',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              'Scan code',
-                              textAlign: TextAlign.center,
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 30),
-
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'FG Services connectés',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  _buildServiceButton(
+                    icon: Icons.payment,
+                    label: 'Pay',
+                    subtitle: 'Pay services',
+                   onTap: () => Navigator.push(
+  context,
+  MaterialPageRoute(builder: (_) => const PaymentMethodsPage()),
+),
                   ),
-                ),
+                  _buildServiceButton(
+                    icon: Icons.qr_code,
+                    label: 'QR Pay',
+                    subtitle: 'Pay with QR',
+                    onTap: openMyQr,
+                  ),
+                  _buildServiceButton(
+                    icon: Icons.qr_code_scanner,
+                    label: 'Scan',
+                    subtitle: 'Scan code',
+                    onTap: openScanQr,
+                  ),
+                ],
+              ),
 
-                const SizedBox(height: 16),
+              const SizedBox(height: 30),
 
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 16,
-                  children: [
-                    InkWell(
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('PayPal bientôt disponible'),
-                          ),
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        width: 150,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: const [
-                            BoxShadow(
-                              blurRadius: 6,
-                              offset: Offset(0, 2),
-                              color: Color(0x14000000),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.account_balance,
-                                color: Colors.blue, size: 30),
-                            SizedBox(height: 10),
-                            Text(
-                              'PayPal',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              'Online payments',
-                              textAlign: TextAlign.center,
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    InkWell(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const StripePaymentPage(),
-                          ),
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        width: 150,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: const [
-                            BoxShadow(
-                              blurRadius: 6,
-                              offset: Offset(0, 2),
-                              color: Color(0x14000000),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.credit_card,
-                                color: Colors.blue, size: 30),
-                            SizedBox(height: 10),
-                            Text(
-                              'Stripe',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              'Card payments',
-                              textAlign: TextAlign.center,
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    InkWell(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const IptvPage(),
-                          ),
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        width: 150,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: const [
-                            BoxShadow(
-                              blurRadius: 6,
-                              offset: Offset(0, 2),
-                              color: Color(0x14000000),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.tv, color: Colors.blue, size: 30),
-                            SizedBox(height: 10),
-                            Text(
-                              'IPTV',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              'Live TV & VOD',
-                              textAlign: TextAlign.center,
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    InkWell(
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('eSIM bientôt disponible'),
-                          ),
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        width: 150,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: const [
-                            BoxShadow(
-                              blurRadius: 6,
-                              offset: Offset(0, 2),
-                              color: Color(0x14000000),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.sim_card,
-                                color: Colors.blue, size: 30),
-                            SizedBox(height: 10),
-                            Text(
-                              'eSIM',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              'Mobile data plans',
-                              textAlign: TextAlign.center,
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    InkWell(
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Starlink bientôt disponible'),
-                          ),
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        width: 150,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: const [
-                            BoxShadow(
-                              blurRadius: 6,
-                              offset: Offset(0, 2),
-                              color: Color(0x14000000),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.wifi, color: Colors.blue, size: 30),
-                            SizedBox(height: 10),
-                            Text(
-                              'Starlink',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              'High-speed internet',
-                              textAlign: TextAlign.center,
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 28),
-
-                const Text(
-                  'Recent Transactions',
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'FG Services connectés',
                   style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.black87,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Track your latest payment activity',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.black54,
-                  ),
-                ),
-                const SizedBox(height: 16),
+              ),
 
-                if (transactions.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Center(
-                      child: Text('Pa gen tranzaksyon'),
-                    ),
-                  )
-                else
-                  ...transactions.map((tx) => buildTransactionCard(tx)).toList(),
-              ],
-            ),
+              const SizedBox(height: 16),
+
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  _buildServiceButton(
+                    icon: Icons.account_balance,
+                    label: 'PayPal',
+                    subtitle: 'Online payments',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const PayPalPaymentPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildServiceButton(
+                    icon: Icons.credit_card,
+                    label: 'Stripe',
+                    subtitle: 'Card payments',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const StripePaymentPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildServiceButton(
+                    icon: Icons.tv,
+                    label: 'IPTV',
+                    subtitle: 'TV packages',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const IptvPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildServiceButton(
+                    icon: Icons.play_circle_fill,
+                    label: 'LIVE TV',
+                    subtitle: 'Watch live channels',
+                    iconColor: Colors.red,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const LiveTVPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildServiceButton(
+                    icon: Icons.sim_card,
+                    label: 'eSIM',
+                    subtitle: 'Mobile data plans',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const EsimPage(),
+                        ),
+                      );
+                    },
+                  ),
+                 
+                 _buildServiceButton(
+  icon: Icons.sim_card_outlined,
+  label: 'Mes eSIM',
+  subtitle: 'Voir mes lignes',
+  onTap: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const MyEsimPage(),
+      ),
+    );
+  },
+),
+
+
+_buildServiceButton(
+  icon: Icons.health_and_safety,
+  label: 'FG Santé',
+  subtitle: 'Dossier médical',
+  iconColor: Colors.red,
+  onTap: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const HealthPage(),
+      ),
+    );
+  },
+),
+
+
+                  _buildServiceButton(
+                    icon: Icons.wifi,
+                    label: 'Internet',
+                    subtitle: 'Plans & Data',
+                    iconColor: Colors.orange,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const InternetPage(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+
+
+              const SizedBox(height: 28),
+
+              const Text(
+                'Recent Transactions',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Track your latest payment activity',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.black54,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              if (transactions.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Center(
+                    child: Text('Pa gen tranzaksyon'),
+                  ),
+                )
+              else
+                ...transactions.map((tx) => buildTransactionCard(tx)).toList(),
+            ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1399,18 +1541,63 @@ Widget _buildPayDialog() {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
-          IconButton(
-            onPressed: loadData,
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+  IconButton(
+    onPressed: loadData,
+    icon: const Icon(Icons.refresh),
+    tooltip: 'Refresh',
+  ),
+
+  Stack(
+  children: [
+    IconButton(
+      icon: const Icon(Icons.notifications_none),
+      tooltip: 'Notifications',
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const NotificationsPage(),
           ),
-          IconButton(
-            onPressed: handleLogout,
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
+        );
+      },
+    ),
+
+    if (notificationCount > 0)
+      Positioned(
+        right: 6,
+        top: 6,
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: Colors.red,
+            borderRadius: BorderRadius.circular(12),
           ),
-          const SizedBox(width: 8),
-        ],
+          constraints: const BoxConstraints(
+            minWidth: 18,
+            minHeight: 18,
+          ),
+          child: Text(
+            '$notificationCount',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
+  ],
+),
+
+  IconButton(
+    onPressed: handleLogout,
+    icon: const Icon(Icons.logout),
+    tooltip: 'Logout',
+  ),
+
+  const SizedBox(width: 8),
+],
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -1445,3 +1632,4 @@ Widget _buildPayDialog() {
     );
   }
 }
+

@@ -46,6 +46,15 @@ class _TransactionsPageState extends State<TransactionsPage> {
 
   String formatDate(String rawDate) {
     if (rawDate.isEmpty) return 'N/A';
+    
+if (reference.isNotEmpty)
+  Text(
+    reference,
+    style: const TextStyle(
+      fontSize: 11,
+      color: Colors.black38,
+    ),
+  ),
 
     try {
       final dt = DateTime.parse(rawDate).toLocal();
@@ -61,10 +70,11 @@ class _TransactionsPageState extends State<TransactionsPage> {
   }
 
   Widget buildTransactionCard(Map<String, dynamic> tx) {
-    final type = (tx['type'] ?? '').toString();
-    final amount = (tx['amount'] ?? 0).toString();
-    final rawDate = (tx['date'] ?? '').toString();
-    final name = (tx['name'] ?? '').toString();
+   final type = (tx['type'] ?? '').toString();
+final amount = (tx['totalAmount'] ?? tx['total_amount'] ?? tx['amount'] ?? 0).toString();
+final rawDate = (tx['date'] ?? tx['created_at'] ?? '').toString();
+final name = (tx['name'] ?? tx['receiver_name'] ?? tx['sender_name'] ?? '').toString();
+final reference = (tx['reference'] ?? '').toString();
 
     final isCredit = type == 'topup' || type == 'credit_transfer';
 
