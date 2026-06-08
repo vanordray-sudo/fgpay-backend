@@ -137,8 +137,13 @@ router.post('/create', authMiddleware, async (req, res) => {
 
     const from_doctor_id = req.userId;
 
+console.log('REFERRAL BODY =', req.body);
+console.log('SPECIALTY ID RECEIVED =', to_specialty_id);
+
+
     const result = await pool.query(
       `
+
       INSERT INTO referrals
       (
         patient_id,
@@ -159,6 +164,7 @@ router.post('/create', authMiddleware, async (req, res) => {
       ]
     );
 
+
     res.json({
       success: true,
       referral: result.rows[0]
@@ -166,6 +172,7 @@ router.post('/create', authMiddleware, async (req, res) => {
 
   } catch (error) {
     console.error('Erreur création referral:', error);
+
 
     res.status(500).json({
       success: false,

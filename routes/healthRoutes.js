@@ -23,7 +23,160 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
+router.get('/full-medical-file/:patientId', authMiddleware, async (req, res) => {
+  const { patientId } = req.params;
 
+ const patient = await pool.query(
+  `
+  SELECT id,
+         full_name,
+         phone,
+         email
+  FROM users
+  WHERE id = $1
+  `,
+  [patientId]
+);
+
+const appointments = await pool.query(
+  `
+  SELECT *
+  FROM appointments
+  WHERE patient_id = $1
+  ORDER BY appointment_date DESC
+  `,
+  [patientId]
+);
+
+const prescriptions = await pool.query(
+  `
+  SELECT *
+  FROM prescriptions
+  WHERE patient_id = $1
+  ORDER BY created_at DESC
+  `,
+  [patientId]
+);
+
+const records = await pool.query(
+  `
+  SELECT *
+  FROM medical_records
+  WHERE patient_id = $1
+  ORDER BY created_at DESC
+  `,
+  [patientId]
+);
+
+const referrals = await pool.query(
+  `
+  SELECT *
+  FROM referrals
+  WHERE patient_id = $1
+  ORDER BY created_at DESC
+  `,
+  [patientId]
+);
+
+console.log('PATIENT =', patient.rows[0]);
+console.log('APPOINTMENTS =', appointments.rows.length);
+console.log('PRESCRIPTIONS =', prescriptions.rows.length);
+console.log('RECORDS =', records.rows);
+console.log('REFERRALS =', referrals.rows);
+
+
+res.json({
+  success: true,
+  patient: patient.rows[0],
+  appointments: appointments.rows,
+  prescriptions: prescriptions.rows,
+  records: records.rows,
+  referrals: referrals.rows,
+});
+});
+
+router.get('/patient/:patientId/full-medical-file', authMiddleware, async (req, res) => {
+  try {
+    const { patientId } = req.params;
+
+    const patient = await pool.query(
+      `SELECT id, full_name, phone, email, created_at
+       FROM users
+       WHERE id = $1`,
+      [patientId]
+    );
+
+    const appointments = await pool.query(
+      `SELECT *
+       FROM appointments
+       WHERE patient_id = $1
+       ORDER BY appointment_date DESC, appointment_time DESC`,
+      [patientId]
+    );
+
+    const prescriptions = await pool.query(
+      `SELECT *
+       FROM prescriptions
+       WHERE patient_id = $1
+       ORDER BY created_at DESC`,
+      [patientId]
+    );
+
+    const records = await pool.query(
+      `SELECT *
+       FROM medical_records
+       WHERE patient_id = $1
+       ORDER BY created_at DESC`,
+      [patientId]
+    );
+
+    const referrals = await pool.query(
+      `SELECT *
+       FROM referrals
+       WHERE patient_id = $1
+       ORDER BY created_at DESC`,
+      [patientId]
+    );
+
+    res.json({
+      success: true,
+      patient: patient.rows[0],
+      appointments: appointments.rows,
+      prescriptions: prescriptions.rows,
+      records: records.rows,
+      referrals: referrals.rows,
+    });
+
+  } catch (err) {
+    console.log('FULL MEDICAL FILE ERROR:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur chargement dossier médical complet',
+      error: err.toString(),
+    });
+  }
+});
+
+router.get('/patient/:patientId/full-medical-file', authMiddleware, async (req, res) => {
+  try {
+    const { patientId } = req.params;
+
+    res.json({
+      success: true,
+      message: 'Route dossier médical OK',
+      patientId: patientId,
+      appointments: [],
+      prescriptions: [],
+      records: [],
+      referrals: [],
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.toString(),
+    });
+  }
+});
 router.get('/professionals/me/status', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
@@ -56,38 +209,39 @@ router.get('/professionals/me/status', authMiddleware, async (req, res) => {
 
 router.get('/stats', authMiddleware, async (req, res) => {
   try {
-    const doctors = await pool.query(
-      `SELECT COUNT(*) FROM users WHERE role = 'doctor' OR health_role = 'doctor'`
-    );
+    const doctors = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM users
+      WHERE role = 'doctor' OR health_role = 'doctor'
+    `);
 
-    const appointments = await pool.query(
-      `SELECT COUNT(*) FROM appointments`
-    );
+    const appointments = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM appointments
+    `);
 
-    const results = await pool.query(
-      `SELECT COUNT(*) FROM medical_records`
-    );
+    const prescriptions = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM prescriptions
+    `);
 
-    const prescriptions = await pool.query(
-      `SELECT COUNT(*) FROM prescriptions`
-    );
+    const results = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM medical_records
+    `);
 
-    res.json({
+    return res.json({
       success: true,
-      doctors: Number(doctors.rows[0].count),
-      appointments: Number(appointments.rows[0].count),
-      results: Number(results.rows[0].count),
-      prescriptions: Number(prescriptions.rows[0].count),
+      doctors: Number(doctors.rows[0].total),
+      appointments: Number(appointments.rows[0].total),
+      prescriptions: Number(prescriptions.rows[0].total),
+      results: Number(results.rows[0].total),
     });
-  } catch (error) {
-    console.log('HEALTH STATS ERROR:', error);
-    res.status(500).json({
+  } catch (err) {
+    console.log('STATS ERROR:', err);
+    return res.status(500).json({
       success: false,
-      doctors: 0,
-      appointments: 0,
-      results: 0,
-      prescriptions: 0,
-      message: error.toString(),
+      message: err.toString(),
     });
   }
 });
@@ -406,7 +560,37 @@ router.post('/doctor-availability', auth, async (req, res) => {
   }
 });
 
+router.get('/prescriptions/doctor', authMiddleware, async (req, res) => {
+  try {
+    const doctorId = req.userId;
 
+    console.log('DOCTOR ID TOKEN =', doctorId);
+
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM prescriptions
+      WHERE doctor_id = $1
+      ORDER BY created_at DESC
+      `,
+      [doctorId]
+    );
+
+    console.log('PRESCRIPTIONS FOUND =', result.rows.length);
+
+    res.json({
+      success: true,
+      prescriptions: result.rows,
+    });
+
+  } catch (err) {
+    console.log('DOCTOR PRESCRIPTIONS ERROR:', err);
+    res.status(500).json({
+      success: false,
+      prescriptions: [],
+    });
+  }
+});
 router.get('/doctor-availability/:doctorId', auth, async (req, res) => {
   try {
     const result = await pool.query(
@@ -1584,8 +1768,18 @@ router.get('/professionals/pending', async (req, res) => {
 
 router.get('/notifications', authMiddleware, async (req, res) => {
   try {
+    const userId = req.userId || req.user?.id;
 
-    console.log('USER ID:', req.userId);
+    console.log('REQ USER:', req.user);
+    console.log('USER ID:', userId);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        notifications: [],
+        message: 'Utilisateur non identifié',
+      });
+    }
 
     const result = await pool.query(
       `
@@ -1594,10 +1788,8 @@ router.get('/notifications', authMiddleware, async (req, res) => {
       WHERE user_id = $1
       ORDER BY created_at DESC
       `,
-      [req.userId]
+      [userId]
     );
-
-    console.log('ROWS:', result.rows.length);
 
     return res.json({
       success: true,
@@ -1605,17 +1797,32 @@ router.get('/notifications', authMiddleware, async (req, res) => {
     });
 
   } catch (error) {
-
-    console.log('FULL NOTIFICATION ERROR:');
-    console.log(error);
+    console.log('FULL NOTIFICATION ERROR:', error);
 
     return res.status(500).json({
       success: false,
       notifications: [],
       message: error.toString(),
     });
-
   }
+});
+
+router.put('/users/:id/birth-date', async (req, res) => {
+  const { birth_date } = req.body;
+
+  await pool.query(
+    `
+    UPDATE users
+    SET birth_date = $1
+    WHERE id = $2
+    `,
+    [birth_date, req.params.id]
+  );
+
+  res.json({
+    success: true,
+    message: 'Date de naissance mise à jour',
+  });
 });
 
 

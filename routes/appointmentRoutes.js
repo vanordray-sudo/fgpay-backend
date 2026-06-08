@@ -29,40 +29,26 @@ console.log('REQ.BODY:', req.body);
 console.log('REQ.USERID:', req.userId);
 
       // Chèche patient nan referral la
-      if (referral_id) {
+    if (referral_id) {
+  const ref = await pool.query(
+    `SELECT patient_id FROM referrals WHERE id = $1`,
+    [referral_id]
+  );
 
-        const referralResult = await pool.query(
-          'SELECT patient_id FROM referrals WHERE id = $1',
-          [referral_id]
-        );
+  if (ref.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: 'Référence introuvable',
+    });
+  }
 
-        if (referralResult.rows.length === 0) {
-          return res.status(404).json({
-            success: false,
-            message: 'Référence introuvable',
-          });
-        }
+  patient_id = ref.rows[0].patient_id;
+}
 
-        patient_id =
-            referralResult.rows[0].patient_id;
-      }
-const patientResult = await pool.query(
-  `SELECT id FROM users WHERE phone = $1 LIMIT 1`,
-  [patient_phone]
-);
+console.log('FINAL PATIENT ID =', patient_id);
+console.log('FINAL DOCTOR ID =', doctor_id);
+console.log('FINAL REFERRAL ID =', referral_id);
 
-const doctorResult = await pool.query(
-  `
-  SELECT id FROM users
-  WHERE health_role = 'doctor'
-    AND (
-      LOWER(name) LIKE LOWER($1)
-      OR LOWER(full_name) LIKE LOWER($1)
-    )
-  LIMIT 1
-  `,
-  [`%${doctor_name}%`]
-);
 
   if (!patient_id && patient_phone) {
   const patientResult = await pool.query(
@@ -71,7 +57,10 @@ const doctorResult = await pool.query(
   );
   patient_id = patientResult.rows[0]?.id || null;
 }
-
+console.log(
+  'PATIENT FROM REFERRAL =',
+  patient_id
+);
 if (!doctor_id && doctor_name) {
   const doctorResult = await pool.query(
     `
@@ -178,18 +167,25 @@ await pool.query(
 router.get('/patients', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT id, full_name, name, phone
+      SELECT id, name, full_name, phone, email
       FROM users
-      WHERE health_role = 'patient'
-      ORDER BY id DESC
+      WHERE role = 'user'
+         OR health_role = 'patient'
+      ORDER BY name ASC, full_name ASC
     `);
 
     res.json({
       success: true,
       patients: result.rows,
     });
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (err) {
+    console.log('PATIENTS LIST ERROR:', err);
+
+    res.status(500).json({
+      success: false,
+      message: err.toString(),
+      patients: [],
+    });
   }
 });
 
@@ -282,21 +278,6 @@ router.get('/patient', authMiddleware, async (req, res) => {
   }
 });
 
-router.get('/doctors-list', authMiddleware, async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT id, full_name, name, phone
-      FROM users
-      WHERE health_role = 'doctor'
-      ORDER BY id DESC
-    `);
-console.log('DOCTOR USER ID =', req.userId);
-console.log('DOCTOR APPOINTMENTS FOUND =', result.rows);
-    res.json({ success: true, doctors: result.rows });
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
-  }
-});
 
 // GET DOCTOR APPOINTMENTS
 router.get('/doctor', authMiddleware, async (req, res) => {
@@ -305,28 +286,22 @@ router.get('/doctor', authMiddleware, async (req, res) => {
 
     const result = await pool.query(
       `
-     SELECT
-a.id AS appointment_id,
-a.patient_id,
-a.doctor_id,
-a.appointment_date,
-a.appointment_time,
-a.reason,
-a.status,
-
-patient.name AS patient_name,
-doctor.name AS doctor_name
-
+    SELECT
+  a.id AS appointment_id,
+  a.patient_id,
+  a.doctor_id,
+  a.appointment_date,
+  a.appointment_time,
+  a.reason,
+  a.status,
+  patient.full_name AS patient_name,
+  patient.phone AS patient_phone,
+  doctor.full_name AS doctor_name
 FROM appointments a
-LEFT JOIN users patient
-ON a.patient_id = patient.id
-
-LEFT JOIN users doctor
-ON a.doctor_id = doctor.id
-
+LEFT JOIN users patient ON patient.id = a.patient_id
+LEFT JOIN users doctor ON doctor.id = a.doctor_id
 WHERE a.doctor_id = $1
-ORDER BY a.appointment_date DESC,
-a.appointment_time DESC
+ORDER BY a.appointment_date DESC, a.appointment_time DESC
       `,
       [doctor_id]
     );
@@ -344,6 +319,32 @@ console.log('DOCTOR ID:', req.userId);
       success: false,
       message: 'Erreur récupération rendez-vous médecin',
       error: err.toString(),
+    });
+  }
+});
+
+router.get('/doctors-list', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, full_name, name, phone, email
+      FROM users
+      WHERE role = 'doctor'
+         OR health_role = 'doctor'
+      ORDER BY full_name ASC, name ASC
+    `);
+
+   console.log('DOCTOR USER ID =', req.userId);
+   console.log('DOCTOR APPOINTMENTS FOUND =', result.rows); 
+    res.json({
+      success: true,
+      doctors: result.rows,
+    });
+  } catch (err) {
+    console.log('DOCTORS LIST ERROR:', err);
+    res.status(500).json({
+      success: false,
+      message: err.toString(),
+      doctors: [],
     });
   }
 });
@@ -371,6 +372,32 @@ router.get('/notifications/patient', authMiddleware, async (req, res) => {
     });
   }
 });
+
+router.get('/patients', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, full_name, name, phone, email
+      FROM users
+      WHERE role = 'patient'
+         OR health_role = 'patient'
+      ORDER BY full_name ASC, name ASC
+    `);
+
+    res.json({
+      success: true,
+      patients: result.rows,
+    });
+  } catch (err) {
+    console.log('PATIENTS LIST ERROR:', err);
+    res.status(500).json({
+      success: false,
+      message: err.toString(),
+      patients: [],
+    });
+  }
+});
+
+
 
 // ADMIN - VOIR TOUS LES RENDEZ-VOUS PATIENTS
 router.get('/admin/all', authMiddleware, async (req, res) => {
@@ -569,45 +596,34 @@ router.get('/doctor/next', authMiddleware, async (req, res) => {
   try {
     const doctorId = req.userId;
 
-    const result = await pool.query(
-      `
-      
-  SELECT
-  a.*,
-  u.full_name AS patient_name,
-  u.phone AS patient_phone,
-  NULL AS patient_birth_date
-FROM appointments a
-JOIN users u ON u.id = a.patient_id
-WHERE a.doctor_id = $1
-AND a.status IN ('confirmed','pending','accepted')
-AND a.appointment_date >= CURRENT_DATE
-ORDER BY a.appointment_date ASC, a.appointment_time ASC
-LIMIT 1
-      `,
-      [doctorId]
-    );
-console.log('NEXT APPOINTMENT:', result.rows[0]);
-    return res.json({
+    const result = await pool.query(`
+      SELECT
+        a.*,
+        u.full_name AS patient_name,
+        u.phone AS patient_phone,
+        u.birth_date AS patient_birth_date
+      FROM appointments a
+      JOIN users u ON u.id = a.patient_id
+      WHERE a.doctor_id = $1
+        AND a.status IN ('pending', 'accepted', 'confirmed')
+        AND a.appointment_date >= CURRENT_DATE
+      ORDER BY a.appointment_date ASC, a.appointment_time ASC
+      LIMIT 1
+    `, [doctorId]);
+
+    res.json({
       success: true,
       appointment: result.rows[0] || null,
     });
-
-  } catch (e) {
-    console.error('NEXT APPOINTMENT ERROR:', e);
-
-    return res.status(500).json({
+  } catch (err) {
+    res.status(500).json({
       success: false,
-      message: 'Erreur prochain rendez-vous',
-      error: e.message,
+      message: 'Erreur prochain patient',
+      error: err.toString(),
     });
   }
 });
-
-router.put(
-  '/:id/complete',
-  authMiddleware,
-  async (req, res) => {
+router.put('/:id/complete',authMiddleware,async (req, res) => {
 
     const appointmentId = req.params.id;
 
@@ -649,35 +665,77 @@ router.put('/:id/accept', authMiddleware, async (req, res) => {
 
     const appointment = appointmentResult.rows[0];
 
+    const infoResult = await pool.query(
+      `
+      SELECT
+        a.id,
+        a.patient_id,
+        a.doctor_id,
+        a.appointment_date,
+        a.appointment_time,
+        p.full_name AS patient_name,
+        d.full_name AS doctor_name
+      FROM appointments a
+      LEFT JOIN users p ON p.id = a.patient_id
+      LEFT JOIN users d ON d.id = a.doctor_id
+      WHERE a.id = $1
+      `,
+      [appointmentId]
+    );
+
+    const info = infoResult.rows[0];
+
     await pool.query(
       `
       INSERT INTO notifications (
-        user_id,
-        title,
-        message,
-        type,
-        is_read,
-        created_at
+        user_id, title, message, type, is_read, created_at
       )
       VALUES ($1, $2, $3, $4, false, NOW())
       `,
       [
         appointment.patient_id,
         'Rendez-vous accepté',
-        'Votre rendez-vous a été accepté par le médecin.',
+        `Votre rendez-vous avec ${info.doctor_name || 'le médecin'} a été accepté.`,
         'appointment',
       ]
     );
 
-    res.json({
+    const admins = await pool.query(
+      `
+      SELECT id
+      FROM users
+      WHERE role = 'admin'
+         OR health_role = 'admin'
+      `
+    );
+
+    for (const admin of admins.rows) {
+      await pool.query(
+        `
+        INSERT INTO notifications (
+          user_id, title, message, type, is_read, created_at
+        )
+        VALUES ($1, $2, $3, $4, false, NOW())
+        `,
+        [
+          admin.id,
+          'Rendez-vous confirmé',
+          `${info.doctor_name || 'Le médecin'} a confirmé le rendez-vous de ${info.patient_name || 'patient'}.`,
+          'appointment_confirmed',
+        ]
+      );
+    }
+
+    return res.json({
       success: true,
-      message: 'Rendez-vous accepté et notification envoyée au patient',
+      message: 'Rendez-vous accepté et notifications envoyées',
       appointment,
     });
+
   } catch (err) {
     console.log('ERROR ACCEPT APPOINTMENT:', err);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Erreur acceptation rendez-vous',
       error: err.toString(),
@@ -706,33 +764,12 @@ console.log('REQ USER ID:', req.userId);
     res.status(500).json({
       success: false,
       error: err.toString(),
+       patients: [],
     });
   }
 });
 
-router.get('/doctor', authMiddleware, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `
-      SELECT *
-      FROM prescriptions
-      WHERE doctor_id = $1
-      ORDER BY id DESC
-      `,
-      [req.userId]
-    );
 
-    res.json({
-      success: true,
-      prescriptions: result.rows,
-    });
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: err.toString(),
-    });
-  }
-});
 
 router.get('/doctor', authMiddleware, async (req, res) => {
   try {
@@ -740,7 +777,7 @@ router.get('/doctor', authMiddleware, async (req, res) => {
       `
       SELECT 
         a.*,
-        u.name AS patient_name
+        u.full_name AS patient_name
       FROM appointments a
       LEFT JOIN users u 
         ON u.id = a.patient_id
@@ -759,6 +796,7 @@ router.get('/doctor', authMiddleware, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur serveur',
+      doctors: []
     });
   }
 });

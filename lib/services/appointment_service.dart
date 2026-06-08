@@ -28,7 +28,8 @@ class AppointmentService {
   if (referralId != null) {
     body['referral_id'] = referralId;
   }
-print('BODY RDV: $body');
+try {
+  print('BODY RDV: $body');
 
   final response = await http.post(
     Uri.parse('$baseUrl/appointments'),
@@ -42,17 +43,17 @@ print('BODY RDV: $body');
   print('STATUS RDV: ${response.statusCode}');
   print('BODY RDV: ${response.body}');
 
-  if (response.body.isEmpty || response.body == 'null') {
-    throw Exception('Réponse serveur vide');
-  }
-
   final data = jsonDecode(response.body);
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw Exception(data['message'] ?? 'Erreur création rendez-vous');
+    throw Exception(data['message'] ?? data['error'] ?? 'Erreur création rendez-vous');
   }
 
   return data;
+} catch (e) {
+  print('RDV EXCEPTION: $e');
+  rethrow;
+}
 }
 
   static Future<List<dynamic>> getPatientAppointments() async {
@@ -108,6 +109,32 @@ static Future<bool> completeAppointment(int appointmentId) async {
   final data = jsonDecode(response.body);
   return data['appointments'] ?? [];
 }
+
+static Future<Map<String, dynamic>?> getNextAppointment() async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('token');
+
+  final response = await http.get(
+    Uri.parse('${ApiConfig.baseUrl}/api/appointments/doctor/next'),
+    headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    },
+  );
+
+  print('NEXT URL = ${ApiConfig.baseUrl}/api/appointments/doctor/next');
+  print('NEXT STATUS = ${response.statusCode}');
+  print('NEXT BODY = ${response.body}');
+
+  final data = jsonDecode(response.body);
+
+  if (response.statusCode == 200 && data['success'] == true) {
+    return data['appointment'];
+  }
+
+  return null;
+}
+
 
 static Future<Map<String, dynamic>> acceptAppointment({
 

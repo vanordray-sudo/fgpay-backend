@@ -100,12 +100,17 @@ router.post('/manual-payment', authMiddleware, async (req, res) => {
 
 router.get('/notifications', authMiddleware, async (req, res) => {
   try {
+    console.log('NOTIF req.userId =', req.userId);
+    console.log('NOTIF req.user =', req.user);
+
+    const userId = req.userId || req.user?.id;
+
     const result = await pool.query(
       `SELECT id, title, message, type, is_read, created_at
        FROM notifications
        WHERE user_id = $1
        ORDER BY created_at DESC`,
-      [req.userId]
+      [userId]
     );
 
     return res.json({
@@ -113,10 +118,13 @@ router.get('/notifications', authMiddleware, async (req, res) => {
       notifications: result.rows,
     });
   } catch (error) {
+    console.log('FULL NOTIFICATION ERROR:');
+    console.log(error);
+
     return res.status(500).json({
       success: false,
       notifications: [],
-      message: 'Erreur notifications',
+      message: error.toString(),
     });
   }
 });

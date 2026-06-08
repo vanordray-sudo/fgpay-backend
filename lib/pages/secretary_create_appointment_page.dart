@@ -3,12 +3,17 @@ import '../services/appointment_service.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api_config.dart';
 
 class SecretaryCreateAppointmentPage extends StatefulWidget {
+  final int? patientId;
+  final int? doctorId;
   final Map<String, dynamic>? referral;
 
   const SecretaryCreateAppointmentPage({
     super.key,
+    this.patientId,
+    this.doctorId,
     this.referral,
   });
 
@@ -17,11 +22,14 @@ class SecretaryCreateAppointmentPage extends StatefulWidget {
   State<SecretaryCreateAppointmentPage> createState() =>
       _SecretaryCreateAppointmentPageState();
 }
-List patients = [];
-List doctors = [];
+
 
 class _SecretaryCreateAppointmentPageState
     extends State<SecretaryCreateAppointmentPage> {
+
+      List patients = [];
+      List doctors = [];
+
   int? selectedPatientId;
   int? selectedDoctorId;
   DateTime? selectedDate;
@@ -33,18 +41,13 @@ class _SecretaryCreateAppointmentPageState
 @override
 void initState() {
   super.initState();
-loadPatientsAndDoctors();
- final referral = widget.referral;
 
-selectedPatientId = referral?['patient_id'];
-selectedDoctorId = referral?['doctor_id'];
+  selectedPatientId = widget.patientId;
+  selectedDoctorId = widget.doctorId;
 
-reasonController.text = referral?['reason']?.toString() ?? '';
-  
-
-  print('SECRETARY REFERRAL: ${widget.referral}');
-  print('SECRETARY REFERRAL ID: ${widget.referral?['id']}');
-  
+  if (selectedPatientId == null || selectedDoctorId == null) {
+    loadPatientsAndDoctors();
+  }
 }
 
   @override
@@ -63,19 +66,21 @@ Future<void> loadPatientsAndDoctors() async {
   final prefs = await SharedPreferences.getInstance();
   final token = prefs.getString('token');
 
-  final patientsResponse = await http.get(
-    Uri.parse('https://fgpay-backend-production.up.railway.app/api/appointments/patients'),
-    headers: {'Authorization': 'Bearer $token'},
-  );
+ final patientsResponse = await http.get(
+  Uri.parse('http://localhost:3000/api/appointments/patients'),
+  headers: {'Authorization': 'Bearer $token'},
+);
 
-  final doctorsResponse = await http.get(
-    Uri.parse('https://fgpay-backend-production.up.railway.app/api/appointments/doctors-list'),
-    headers: {'Authorization': 'Bearer $token'},
-  );
+final doctorsResponse = await http.get(
+  Uri.parse('http://localhost:3000/api/appointments/doctors-list'),
+  headers: {'Authorization': 'Bearer $token'},
+);
 
   final patientsData = jsonDecode(patientsResponse.body);
 final doctorsData = jsonDecode(doctorsResponse.body);
 
+print('PATIENTS = $patients');
+print('DOCTORS = $doctors');
 print('PATIENTS RESPONSE = ${patientsResponse.body}');
 print('DOCTORS RESPONSE = ${doctorsResponse.body}');
 print('DOCTORS STATUS = ${doctorsResponse.statusCode}');
@@ -109,8 +114,8 @@ if (selectedPatientId == null || selectedDoctorId == null || selectedDate == nul
 
   try {
   final result = await AppointmentService.createAppointment(
-  patientId: selectedPatientId!,
-  doctorId: selectedDoctorId!,
+  patientId: widget.patientId ?? selectedPatientId!,
+  doctorId: widget.doctorId ?? selectedDoctorId!,
   date: _formatDate(selectedDate!),
   time: selectedTime!,
   reason: reasonController.text.trim(),
@@ -162,45 +167,50 @@ if (selectedDoctorId != null &&
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-          DropdownButtonFormField<int>(
-  decoration: const InputDecoration(
-    labelText: 'Patient',
-    border: OutlineInputBorder(),
+         
+  if (widget.patientId == null)
+  DropdownButtonFormField<int>(
+    decoration: const InputDecoration(
+      labelText: 'Patient',
+      border: OutlineInputBorder(),
+    ),
+    value: selectedPatientId,
+    items: patients.map<DropdownMenuItem<int>>((p) {
+      return DropdownMenuItem<int>(
+        value: p['id'],
+        child: Text('${p['full_name'] ?? p['name']} - ${p['phone']}'),
+      );
+    }).toList(),
+    onChanged: (value) {
+      setState(() {
+        selectedPatientId = value;
+      });
+    },
   ),
-  value: selectedPatientId,
-  items: patients.map<DropdownMenuItem<int>>((p) {
-    return DropdownMenuItem<int>(
-      value: p['id'],
-      child: Text('${p['full_name'] ?? p['name']} - ${p['phone']}'),
-    );
-  }).toList(),
-  onChanged: (value) {
-    setState(() {
-      selectedPatientId = value;
-    });
-  },
-          ),
+          
             
 const SizedBox(height: 15),
 
-          DropdownButtonFormField<int>(
-  decoration: const InputDecoration(
-    labelText: 'Médecin',
-    border: OutlineInputBorder(),
+ if (widget.doctorId == null)
+  DropdownButtonFormField<int>(
+    decoration: const InputDecoration(
+      labelText: 'Médecin',
+      border: OutlineInputBorder(),
+    ),
+    value: selectedDoctorId,
+    items: doctors.map<DropdownMenuItem<int>>((d) {
+      return DropdownMenuItem<int>(
+        value: d['id'],
+        child: Text('${d['full_name'] ?? d['name']}'),
+      );
+    }).toList(),
+    onChanged: (value) {
+      setState(() {
+        selectedDoctorId = value;
+      });
+    },
   ),
-  value: selectedDoctorId,
-  items: doctors.map<DropdownMenuItem<int>>((d) {
-    return DropdownMenuItem<int>(
-      value: d['id'],
-      child: Text('${d['full_name'] ?? d['name']} - ${d['phone']}'),
-    );
-  }).toList(),
-  onChanged: (value) {
-    setState(() {
-      selectedDoctorId = value;
-    });
-  },
-),
+
           
             const SizedBox(height: 15),
 

@@ -108,7 +108,7 @@ if (items && items.length > 0) {
 }
 
 prescription.items = items || [];
-
+console.log('DOCTOR:', req.userId);
     await pool.query(
       `
       INSERT INTO notifications (
@@ -137,20 +137,31 @@ Durée : ${duration}`,
   items: items || [],
 };
 
+console.log('=== PRESCRIPTION REQUEST ===');
+console.log(req.body);
+console.log('============================');
+console.log('INSERT OK');
+
 res.json({
   success: true,
   prescription: fullPrescription,
 });
 
-  } catch (error) {
-    console.log('PRESCRIPTION ERROR:', error);
+ } catch (err) {
+  console.log('CREATE PRESCRIPTION FULL ERROR:', err);
+  console.log('ERROR MESSAGE:', err.message);
+  console.log('ERROR STACK:', err.stack);
+  console.log('ERROR CAUSE:', err.cause);
+  console.log('ERROR ERRORS:', err.errors);
 
-    res.status(500).json({
-      success: false,
-      message: 'Erreur création prescription',
-      error: error.toString(),
-    });
-  }
+  return res.status(500).json({
+    success: false,
+    message: 'Erreur création prescription',
+    error: err.message || err.toString(),
+    errors: err.errors || null,
+    stack: err.stack || null,
+  });
+}
 });
 
 
@@ -205,6 +216,9 @@ router.post('/', authMiddleware, async (req, res) => {
       prescription_date
     } = req.body;
 
+console.log('PRESCRIPTION BODY:', req.body);
+console.log('DOCTOR ID:', req.userId);
+
     const result = await pool.query(
       `
       INSERT INTO prescriptions (
@@ -241,16 +255,52 @@ router.post('/', authMiddleware, async (req, res) => {
       prescription: result.rows[0]
     });
 
-  } catch (error) {
-    console.error('CREATE PRESCRIPTION ERROR:', error);
+  } catch (err) {
 
+  console.log('====================');
+  console.log('PRESCRIPTION ERROR');
+  console.log(err);
+  console.log(err.message);
+  console.log('====================');
+
+  return res.status(500).json({
+    success: false,
+    error: err.message,
+  });
+}
+});
+
+router.get('/prescriptions/doctor', authMiddleware, async (req, res) => {
+  try {
+    const doctorId = req.userId;
+
+    console.log('DOCTOR ID TOKEN =', doctorId);
+
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM prescriptions
+      WHERE doctor_id = $1
+      ORDER BY created_at DESC
+      `,
+      [doctorId]
+    );
+
+    console.log('PRESCRIPTIONS FOUND =', result.rows.length);
+
+    res.json({
+      success: true,
+      prescriptions: result.rows,
+    });
+
+  } catch (err) {
+    console.log('DOCTOR PRESCRIPTIONS ERROR:', err);
     res.status(500).json({
       success: false,
-      message: error.message
+      prescriptions: [],
     });
   }
 });
-
 router.get('/doctor', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(

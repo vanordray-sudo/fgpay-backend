@@ -1,6 +1,6 @@
+
 class ApiConfig {
-  static const String baseUrl =
-      'https://fgpay-backend-production.up.railway.app';
+  static const String baseUrl = 'http://localhost:3000';
 }
 
   // 🔁 si ou chanje environnement

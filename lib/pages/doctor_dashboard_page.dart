@@ -13,6 +13,7 @@ import 'secretary_create_appointment_page.dart';
 import '../services/health_service.dart';
 import 'consultation_page.dart';
 import 'prescriptions_page.dart';
+import '../services/appointment_service.dart';
 
 
 class DoctorDashboardPage extends StatefulWidget {
@@ -34,7 +35,6 @@ bool loadingNext = true;
       @override
 void initState() {
   super.initState();
-  _checkProfessionalStatus();
   _loadNextAppointment();
 }
 
@@ -60,27 +60,42 @@ Future<void> _checkProfessionalStatus() async {
 }
 Future<void> _loadNextAppointment() async {
   try {
+    final data = await HealthService.getNextAppointment();
+    print('NEXT APPOINTMENT = $data');
+    print('NEXT DATA FLUTTER = $data');
 
-    final data =
-        await HealthService.getNextAppointment();
+    Map<String, dynamic>? appointment;
 
-    if (mounted) {
-      setState(() {
-        nextAppointment = data['appointment'];
-        loadingNext = false;
-      });
+    if (data != null && data['success'] == true) {
+      appointment = data['appointment'];
     }
 
-  } catch (_) {
+    if (appointment == null) {
+      final list = await AppointmentService.getDoctorAppointments();
 
-    if (mounted) {
-      setState(() {
-        loadingNext = false;
-      });
+      if (list.isNotEmpty) {
+        appointment = Map<String, dynamic>.from(list.first);
+      }
     }
 
+    if (!mounted) return;
+
+    setState(() {
+      nextAppointment = appointment;
+      loadingNext = false;
+    });
+  } catch (e) {
+    print('NEXT APPOINTMENT ERROR = $e');
+
+    if (!mounted) return;
+
+    setState(() {
+      nextAppointment = null;
+      loadingNext = false;
+    });
   }
 }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -196,7 +211,7 @@ Future<void> _loadNextAppointment() async {
           ),
         );
 
-        await _loadNextAppointment();
+      
       },
                 icon: const Icon(Icons.medical_services),
                 label: const Text(

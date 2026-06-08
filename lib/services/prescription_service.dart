@@ -4,12 +4,16 @@ import 'auth_service.dart';
 import '../config/api_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+
 class PrescriptionService {
  static const String baseUrl = 'http://localhost:3000/api';
 
  static Future<Map<String, dynamic>> createPrescription({
   required String? patientName,
   required String? patientPhone,
+           String? patientBirthDate,
+           String? appointmentDate,
+           String? appointmentTime,
   required int? patientId,
   required int? appointmentId,
   required String medication,
@@ -28,29 +32,35 @@ class PrescriptionService {
       'Authorization': 'Bearer $token',
       'Content-Type': 'application/json',
     },
+
+
+
     body: jsonEncode({
-      'patient_id': patientId,
-      'appointment_id': appointmentId,
-      'patient_name': patientName,
-      'medication': medication,
-      'dosage': dosage,
-      'duration': duration,
-      'instructions': instructions,
-      'notes': instructions,
-      'doctor_name': doctorName,
-      'clinic_name': clinicName,
-      'prescription_date': prescriptionDate,
+  'patient_name': patientName,
+  'patient_phone': patientPhone,
+  'patient_birth_date': patientBirthDate,
+  'appointment_time': appointmentTime,
+  'appointment_date': appointmentDate,
+  'patient_id': patientId,
+  'appointment_id': appointmentId,
+  'medication': medication,
+  'dosage': dosage,
+  'duration': duration,
+  'instructions': instructions,
+  'doctor_name': doctorName,
+  'clinic_name': clinicName,
+  'prescription_date': prescriptionDate,
     }),
   );
 
-  if (response.statusCode == 200 || response.statusCode == 201) {
-    return jsonDecode(response.body);
-  }
 
-  return {
-    'success': false,
-    'message': 'Erreur création prescription',
-  };
+print('CREATE PRESCRIPTION STATUS: ${response.statusCode}');
+print('CREATE PRESCRIPTION BODY: ${response.body}');
+  
+    return jsonDecode(response.body);
+  
+
+  
 }
 Future<List<dynamic>> getMyPrescriptions() async {
   final prefs = await SharedPreferences.getInstance();

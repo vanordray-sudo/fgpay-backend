@@ -5,6 +5,7 @@ import 'medical_appointments_page.dart';
 import '../pages/my_appointments_page.dart';
 import 'prescriptions_page.dart';
 import 'doctor_appointments_page.dart';
+import 'patient_medical_history_page.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -26,7 +27,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Future<void> loadNotifications() async {
   final walletData = await WalletService.getNotifications();
    final healthData = await HealthService.getNotifications();
-
+   
 
   print('WALLET NOTIFS: $walletData');
   print('HEALTH NOTIFS: $healthData');
@@ -118,6 +119,31 @@ if (title == 'Nouvelle demande de rendez-vous') {
   );
   return;
 }
+
+
+else if (type == 'lab_result' || type == 'medical_record') {
+  final patientId = n['patient_id'];
+  final recordId = n['record_id'];
+
+  if (patientId == null && recordId == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Résultat labo incomplet'),
+      ),
+    );
+    return;
+  }
+
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => PatientMedicalHistoryPage(
+        patientId: patientId,
+      ),
+    ),
+  );
+}
+
 
   if (type == 'prescription') {
     Navigator.push(

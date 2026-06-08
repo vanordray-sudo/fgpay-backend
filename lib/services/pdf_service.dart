@@ -7,6 +7,8 @@ import 'package:printing/printing.dart';
 class PdfService {
   static Future<void> generatePrescriptionPdf({
     required String patientName,
+    String? patientPhone,
+    String? patientBirthDate,
     required String doctorName,
     required String medication,
     required String dosage,
@@ -81,6 +83,13 @@ class PdfService {
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
+
+pw.SizedBox(height: 6),
+
+pw.Text('Téléphone : ${patientPhone ?? ""}'),
+
+if (patientBirthDate != null && patientBirthDate.isNotEmpty)
+  pw.Text('Date de naissance : $patientBirthDate'),
 
                 pw.SizedBox(height: 30),
 

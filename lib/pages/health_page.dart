@@ -72,26 +72,29 @@ print('HEALTH USER = $user');
 }
 
   Future<void> loadStats() async {
-    try {
-      final stats = await HealthService.getHealthStats();
+  try {
+    print('LOAD STATS CALLED');
 
-      setState(() {
-        doctorsCount = stats['doctors'] ?? 0;
-        resultsCount = stats['results'] ?? 0;
-        appointmentsCount = stats['appointments'] ?? 0;
-        prescriptionsCount = stats['prescriptions'] ?? 0;
+    final stats = await HealthService.getHealthStats();
 
-        isLoading = false;
-      });
-    } catch (e) {
-      print('Erreur chargement stats santé: $e');
+    print('STATS RESULT = $stats');
 
-      setState(() {
-        isLoading = false;
-      });
-    }
+    setState(() {
+      doctorsCount = stats['doctors'] ?? 0;
+      resultsCount = stats['results'] ?? 0;
+      appointmentsCount = stats['appointments'] ?? 0;
+      prescriptionsCount = stats['prescriptions'] ?? 0;
+
+      isLoading = false;
+    });
+  } catch (e) {
+    print('Erreur chargement stats santé: $e');
+
+    setState(() {
+      isLoading = false;
+    });
   }
-  
+}
 
 Widget _healthCard({
   required IconData icon,

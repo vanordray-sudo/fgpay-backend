@@ -34,9 +34,7 @@ class _PrescriptionsPageState
       final token =
           await AuthService.getToken();
 
-      const String baseUrl =
-    'https://fgpay-backend-production.up.railway.app';
-
+     const String baseUrl = 'http://localhost:3000';
 final response = await http.get(
   Uri.parse('$baseUrl/api/prescriptions/doctor'),
   headers: {

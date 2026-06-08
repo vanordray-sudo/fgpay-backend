@@ -171,12 +171,11 @@ Future<void> showAppointmentDialog(dynamic referral) async {
                     }
 
 
-print('REFERRAL DATA: $referral');
-print('REFERRAL ID: ${referral['id']}');
-print('PATIENT ID: ${referral['patient_id']}');
-print('DOCTOR ID: ${referral['doctor_id']}');
-print('REFERRAL_ID FIELD: ${referral['referral_id']}');
-
+print('====================');
+print(referral);
+print('PATIENT_ID = ${referral['patient_id']}');
+print('PATIENTID = ${referral['patientId']}');
+print('====================');
    final result = await AppointmentService.createAppointment(
                     
   patientId: int.parse(
@@ -320,20 +319,12 @@ Widget buildReferralCard(dynamic referral) {
                 foregroundColor: Colors.white,
               ),
           onPressed: () {
-  print('REFERRAL CLICKED: $referral');
-
+ 
   Navigator.push(
     context,
     MaterialPageRoute(
       builder: (_) => SecretaryCreateAppointmentPage(
-        referral: {
-          'id': referral['id'] ?? referral['referral_id'],
-          'patient_id': referral['patient_id'],
-          'patient_name': referral['patient_name'] ?? referral['patient'],
-          'doctor_id': referral['doctor_id'] ?? 5,
-          'doctor_name': referral['doctor_name'] ?? 'Dr James Constant',
-          'reason': referral['reason'],
-        },
+        referral: referral,
       ),
     ),
   );

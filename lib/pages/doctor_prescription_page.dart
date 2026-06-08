@@ -102,6 +102,9 @@ final prescriptionItems = medications.map((item) {
 final result = await PrescriptionService.createPrescription(
   patientName: widget.appointment['patient_name'],
   patientPhone: widget.appointment['patient_phone'],
+  patientBirthDate: widget.appointment['patient_birth_date'],
+  appointmentDate: widget.appointment['appointment_date'],
+  appointmentTime: widget.appointment['appointment_time'],
   patientId: finalPatientId,
   appointmentId: finalAppointmentId,
   medication: medicationController.text.trim(),
@@ -204,6 +207,13 @@ if (result['success'] == true) {
     fontWeight: FontWeight.bold,
   ),
 ),
+Text('Téléphone : ${widget.appointment['patient_phone'] ?? ''}'),
+
+if (widget.appointment['patient_birth_date'] != null)
+  Text('Date de naissance : ${widget.appointment['patient_birth_date']}'),
+
+Text('Date consultation : ${widget.appointment['appointment_date'] ?? ''}'),
+Text('Heure : ${widget.appointment['appointment_time'] ?? ''}'),
 
             const SizedBox(height: 20),
 

@@ -55,6 +55,34 @@ static Future<Map<String, dynamic>> addPrescription({
   return jsonDecode(response.body);
 }
  
+static Future<Map<String, dynamic>> getFullMedicalFile(int patientId) async {
+  final token = await AuthService.getToken();
+
+  final url = '$baseUrl/full-medical-file/$patientId';
+
+  final response = await http.get(
+    Uri.parse(url),
+    headers: {
+      'Authorization': 'Bearer $token',
+      'Accept': 'application/json',
+    },
+  );
+
+  print('DOSSIER URL = $url');
+  print('DOSSIER STATUS = ${response.statusCode}');
+  print('DOSSIER BODY = ${response.body}');
+
+  final data = jsonDecode(response.body);
+
+if (response.statusCode == 200 && data['success'] == true) {
+  return data;
+}
+
+throw Exception(
+  data['message'] ?? 'Erreur chargement dossier médical',
+);
+}
+
 static Future<Map<String, dynamic>> getNextAppointment() async {
   final token = await AuthService.getToken();
 
@@ -65,7 +93,8 @@ static Future<Map<String, dynamic>> getNextAppointment() async {
       'Authorization': 'Bearer $token',
     },
   );
-
+print('NEXT STATUS = ${response.statusCode}');
+print('NEXT BODY = ${response.body}');
   return jsonDecode(response.body);
 }
 
@@ -251,8 +280,9 @@ static Future<Map<String, dynamic>> getHealthStats() async {
     },
   );
 
-  print('STATS STATUS: ${response.statusCode}');
-  print('STATS BODY: ${response.body}');
+ print('STATS URL = ${ApiConfig.baseUrl}/api/health/stats');
+print('STATS STATUS = ${response.statusCode}');
+print('STATS BODY = ${response.body}');
 
   final data = jsonDecode(response.body);
 
@@ -487,29 +517,31 @@ static Future<Map<String, dynamic>> cancelAppointment({
 }
 
 static Future<List<dynamic>> getNotifications() async {
+
   final prefs = await SharedPreferences.getInstance();
   final token = prefs.getString('token');
-print('HEALTH URL => $baseUrl/notifications');
+
+  print('HEALTH URL => $baseUrl/notifications');
+
   final response = await http.get(
-  Uri.parse('$baseUrl/notifications'),
-  headers: {
-    'Authorization': 'Bearer $token',
-    'Content-Type': 'application/json',
-  },
-);
+    Uri.parse('$baseUrl/notifications'),
+    headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    },
+  );
 
   print('HEALTH NOTIFS STATUS: ${response.statusCode}');
   print('HEALTH NOTIFS BODY: ${response.body}');
-print(
-  'NOTIFS URL = $baseUrl/notifications'
-);
+
   if (response.statusCode == 200) {
     final data = jsonDecode(response.body);
 
     if (data is List) return data;
-    if (data['notifications'] != null) return data['notifications'];
 
-    return [];
+    if (data['notifications'] != null) {
+      return data['notifications'];
+    }
   }
 
   return [];
