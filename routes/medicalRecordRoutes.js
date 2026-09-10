@@ -353,4 +353,161 @@ message:err.message
 
 });
 
+// =============================
+// GET MY HEALTH MEDICAL RECORD
+// =============================
+router.get(
+  '/health-profile/me',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const patientId = req.userId;
+
+      if (!patientId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Utilisateur introuvable.',
+        });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT *
+        FROM health_medical_records
+        WHERE patient_id = $1
+        LIMIT 1
+        `,
+        [patientId]
+      );
+
+      return res.status(200).json({
+        success: true,
+        medical_record:
+          result.rows.length > 0
+            ? result.rows[0]
+            : null,
+      });
+
+    } catch (error) {
+      console.error(
+        'GET HEALTH MEDICAL RECORD ERROR:',
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+);
+
+// =============================
+// CREATE / UPDATE HEALTH PROFILE
+// =============================
+router.put(
+  '/health-profile/me',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const patientId = req.userId;
+
+      if (!patientId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Utilisateur introuvable.',
+        });
+      }
+
+      const {
+        country_code,
+        preferred_language,
+        blood_type,
+        allergies,
+        chronic_conditions,
+        medical_history,
+        surgical_history,
+        current_treatments,
+        emergency_contact_name,
+        emergency_contact_phone,
+        emergency_contact_relation,
+      } = req.body;
+
+      const result = await pool.query(
+        `
+        INSERT INTO health_medical_records (
+          patient_id,
+          country_code,
+          preferred_language,
+          blood_type,
+          allergies,
+          chronic_conditions,
+          medical_history,
+          surgical_history,
+          current_treatments,
+          emergency_contact_name,
+          emergency_contact_phone,
+          emergency_contact_relation
+        )
+        VALUES (
+          $1,$2,$3,$4,$5,$6,
+          $7,$8,$9,$10,$11,$12
+        )
+
+        ON CONFLICT (patient_id)
+
+        DO UPDATE SET
+          country_code = EXCLUDED.country_code,
+          preferred_language = EXCLUDED.preferred_language,
+          blood_type = EXCLUDED.blood_type,
+          allergies = EXCLUDED.allergies,
+          chronic_conditions = EXCLUDED.chronic_conditions,
+          medical_history = EXCLUDED.medical_history,
+          surgical_history = EXCLUDED.surgical_history,
+          current_treatments = EXCLUDED.current_treatments,
+          emergency_contact_name =
+            EXCLUDED.emergency_contact_name,
+          emergency_contact_phone =
+            EXCLUDED.emergency_contact_phone,
+          emergency_contact_relation =
+            EXCLUDED.emergency_contact_relation,
+          updated_at = NOW()
+
+        RETURNING *
+        `,
+        [
+          patientId,
+          country_code,
+          preferred_language,
+          blood_type,
+          allergies,
+          chronic_conditions,
+          medical_history,
+          surgical_history,
+          current_treatments,
+          emergency_contact_name,
+          emergency_contact_phone,
+          emergency_contact_relation,
+        ]
+      );
+
+      return res.status(200).json({
+        success: true,
+        medical_record: result.rows[0],
+      });
+
+    } catch (error) {
+      console.error(
+        'SAVE HEALTH MEDICAL RECORD ERROR:',
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+);
+
 module.exports=router;

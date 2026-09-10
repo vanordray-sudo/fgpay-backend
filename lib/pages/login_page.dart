@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/auth_service.dart';
-import 'main_entry_page.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'professional_pending_page.dart';
+import 'health_page.dart';
+import 'create_professional_profile_page.dart';
+import 'fgsante_subscription_page.dart';
+import 'health_professional_pro_page.dart';
+import '../config/api_config.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -37,7 +40,9 @@ class _LoginPageState extends State<LoginPage> {
     if (loggedIn) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const MainEntryPage()),
+        MaterialPageRoute(
+  builder: (_) => const HealthPage(),
+)
       );
       return;
     }
@@ -73,13 +78,7 @@ print('USER RESPONSE = ${data['user']}');
 
     if (response.statusCode == 200 && data['success'] == true) {
 
-  final prefs = await SharedPreferences.getInstance();
-
-await prefs.setString('token', data['token']);
-await prefs.setString('user', jsonEncode(data['user']));
-
-print('TOKEN SAVED: ${data['token']}');
-
+ 
   // 🔥 SAVE TOKEN DIRÈK
 
   print('TOKEN SAVED: ${data['token']}');
@@ -92,7 +91,66 @@ print('USER RESPONSE = ${data['user']}');
   Map<String, dynamic>.from(data['user']),
 );
 
-final user = Map<String, dynamic>.from(data['user']);
+final user =
+    Map<String, dynamic>.from(data['user']);
+
+final subscriptionResponse = await http.get(
+  Uri.parse(
+    '${ApiConfig.baseUrl}/api/fgsante/subscriptions/me',
+  ),
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ${data['token']}',
+  },
+);
+
+print(
+  'SUBSCRIPTION STATUS CODE = '
+  '${subscriptionResponse.statusCode}',
+);
+
+print(
+  'SUBSCRIPTION RESPONSE = '
+  '${subscriptionResponse.body}',
+);
+
+bool subscriptionIsActive = false;
+
+if (subscriptionResponse.statusCode == 200) {
+  final subscriptionData =
+      jsonDecode(subscriptionResponse.body);
+
+  final subscription =
+      subscriptionData['subscription'];
+
+  subscriptionIsActive =
+      subscription != null &&
+      subscription['status'] == 'active';
+}
+
+if (!mounted) return;
+
+if (subscriptionIsActive) {
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (_) => const HealthPage(),
+    ),
+  );
+} else {
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (_) => const FgSanteSubscriptionPage(),
+    ),
+  );
+}
+
+return;
+
+
+
+
 
 print('HEALTH ROLE = ${user['health_role']}');
 print('PRO STATUS = ${user['professional_status']}');
@@ -110,13 +168,25 @@ if (
   );
   return;
 }
-
+if (
+    user['health_role'] == 'doctor' &&
+    user['professional_status'] == 'approved' &&
+    user['subscription_status'] != 'active'
+) {
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (_) =>  FgSanteSubscriptionPage(),
+    ),
+  );
+  return;
+}
 if (!mounted) return;
 
 Navigator.pushReplacement(
   context,
   MaterialPageRoute(
-    builder: (_) => const MainEntryPage(),
+    builder: (_) => const HealthPage(),
   ),
 );
 
@@ -144,51 +214,43 @@ Navigator.pushReplacement(
     passwordController.dispose();
     super.dispose();
   }
+Widget buildHeader() {
+  return Column(
+    children: [
+      Image.asset(
+        'assets/fgsante_logo.png',
+        width: 110,
+        height: 110,
+        fit: BoxFit.contain,
+      ),
 
-  Widget buildHeader() {
-    return Column(
-      children: [
-        Container(
-          width: 84,
-          height: 84,
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              colors: [
-                Color(0xFF0D6EFD),
-                Color(0xFF3FA2FF),
-              ],
-            ),
-          ),
-          child: const Icon(
-            Icons.account_balance_wallet_rounded,
-            color: Colors.white,
-            size: 42,
-          ),
-        ),
-        const SizedBox(height: 20),
-        const Text(
-          'Byenvini sou FGPay',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w900,
-            color: Colors.black87,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'konektew, pou jere lajan ou an sekirite',
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.black54,
-          ),
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
-  }
+      const SizedBox(height: 20),
 
+      const Text(
+        'Bienvenue sur FG Santé\nWelcome to FG Santé',
+        style: TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w900,
+          color: Colors.black87,
+        ),
+        textAlign: TextAlign.center,
+      ),
+
+      const SizedBox(height: 8),
+
+      const Text(
+        'Connectez-vous pour accéder à votre espace santé\n'
+        'Sign in to access your health space',
+        style: TextStyle(
+          fontSize: 14,
+          color: Colors.black54,
+        ),
+        textAlign: TextAlign.center,
+      ),
+    ],
+  );
+}
+ 
   Widget buildPhoneField() {
     return TextField(
       controller: phoneController,
@@ -227,37 +289,76 @@ Navigator.pushReplacement(
     );
   }
 
-  Widget buildLoginButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: isLoading ? null : handleLogin,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF3FA2FF),
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+ Widget buildLoginButton() {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: isLoading ? null : handleLogin,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF3FA2FF),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            padding: const EdgeInsets.symmetric(
+              vertical: 16,
+            ),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: isLoading
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.4,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text(
+                  'Login',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
         ),
-        child: isLoading
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.4,
-                  color: Colors.white,
-                ),
-              )
-            : const Text(
-                'Login',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
       ),
-    );
-  }
+
+      const SizedBox(height: 12),
+
+      OutlinedButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CreateProfessionalProfilePage(),
+            ),
+          );
+        },
+        child: const Text(
+          'Ouvrir un compte professionnel',
+        ),
+      ),
+
+      const SizedBox(height: 8),
+
+      TextButton(
+       onPressed: () {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => const FgSanteSubscriptionPage(),
+    ),
+  );
+},
+        child: const Text(
+          'Choisir mon abonnement FG Santé',
+        ),
+      ),
+    ],
+  );
+}
 
   Widget buildDemoUsers() {
     return Container(

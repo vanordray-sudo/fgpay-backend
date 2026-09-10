@@ -7,111 +7,141 @@ const bcrypt = require('bcryptjs');
 const path = require('path');
 
 const pool = require('./db');
-const walletRoutes = require('./routes/walletRoutes');
-const paypalRoutes = require('./routes/paypalRoutes');
-const esimRoutes = require('./routes/esimRoutes');
-const stripeRoutes = require('./routes/stripeRoutes');
-const channelRoutes = require('./routes/channelRoutes');
-const internetRoutes = require('./routes/internetRoutes');
+
+
+
+// =========================
+// FG SANTÉ ROUTES
+// =========================
 const authRoutes = require('./routes/authRoutes');
-const testRoutes = require('./routes/testRoutes');
 const labRoutes = require('./routes/labRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const healthRoutes = require('./routes/healthRoutes');
 const referralRoutes = require('./routes/referralRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes');
-const prescriptionRoutes =require('./routes/prescriptionRoutes');
+const prescriptionRoutes = require('./routes/prescriptionRoutes');
 const medicalRecordRoutes = require('./routes/medicalRecordRoutes');
-const doctorAvailabilityRoutes = require('./routes/doctorAvailabilityRoutes');
-const professionalRoutes = require('./routes/professionalRoutes');
-const Stripe = require('stripe');
-// const admin = require('./serviceAccountkey');
+const doctorAvailabilityRoutes =
+    require('./routes/doctorAvailabilityRoutes');
+const professionalRoutes =
+    require('./routes/professionalRoutes');
+    const fgsanteSubscriptionRoutes =
+    require('./routes/fgsanteSubscriptionRoutes');
 
+// Nou kenbe Stripe paske FG Santé gen abonnement/paiement.
+const stripeRoutes = require('./routes/stripeRoutes');
 
-
-
-
-
+// =========================
+// APP CONFIG
+// =========================
 const app = express();
 
-const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 const router = express.Router();
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+
+const PORT = process.env.PORT || 5000;
+const JWT_SECRET =
+    process.env.JWT_SECRET || 'secret';
 
 // =========================
 // MIDDLEWARES
 // =========================
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+app.use(
+  cors({
+    origin: '*',
+    methods: [
+      'GET',
+      'POST',
+      'PUT',
+      'PATCH',
+      'DELETE',
+    ],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+    ],
+  }),
+);
 
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use( '/uploads',express.static(path.join(__dirname, 'uploads')));
-app.use('/api/health', healthRoutes);
+app.use(
+  express.urlencoded({
+    extended: true,
+  }),
+);
 
-app.use('/api/subscription', router);
-app.use('/api/wallet', walletRoutes);
-app.use('/api/test', testRoutes);
-app.use('/api/channels', channelRoutes);
-app.use('/api/internet', internetRoutes);
+app.use(
+  '/uploads',
+  express.static(
+    path.join(
+      __dirname,
+      'uploads',
+    ),
+  ),
+);
+
+// =========================
+// FG SANTÉ API ROUTES
+// =========================
 app.use('/api/auth', authRoutes);
-app.use('/api/esim', esimRoutes);
 app.use('/api/labs', labRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/health', healthRoutes);
 app.use('/api/referrals', referralRoutes);
 app.use('/api/appointments', appointmentRoutes);
-app.use( '/api/prescriptions',prescriptionRoutes,);
-app.use('/api/medical-records', medicalRecordRoutes);
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use('/api/referrals', referralRoutes);
-app.use('/api/doctor-availabilities', doctorAvailabilityRoutes);
-app.use('/api/health', prescriptionRoutes);
-app.use('/api/professionals',professionalRoutes);
-app.use('/api/health', healthRoutes);
+app.use(
+  '/api/prescriptions',
+  prescriptionRoutes,
+);
+app.use(
+  '/api/medical-records',
+  medicalRecordRoutes,
+);
+app.use(
+  '/api/doctor-availabilities',
+  doctorAvailabilityRoutes,
+);
+app.use(
+  '/api/professionals',
+  professionalRoutes,
+);
 
+app.use(
+  '/api/fgsante/subscriptions',
+  fgsanteSubscriptionRoutes
+);
 
-
-app.listen(PORT, () => {
-  console.log(`Serveur démarré sur http://localhost:${PORT}`);
-});
-
-// =========================
-// DEBUG / STARTUP LOGS
-// =========================
-console.log('STRIPE KEY =', process.env.STRIPE_SECRET_KEY ? 'OK' : 'MISSING');
-
-pool.query('SELECT NOW()')
-  .then(() => console.log('DB CONNECTED OK'))
-  .catch((err) => console.error('DB ERROR:', err.message));
-
-pool.query('SELECT * FROM users')
-  .then((res) => console.log('USERS OK:', res.rows.length))
-  .catch((err) => console.error('ERROR USERS:', err.message));
+// Paiements FG Santé
+app.use('/api/stripe', stripeRoutes);
 
 // =========================
-// AUTH HELPERS
+// AUTH HELPER
 // =========================
 function auth(req, res, next) {
-  const authHeader = req.headers.authorization;
+  const authHeader =
+      req.headers.authorization;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (
+    !authHeader ||
+    !authHeader.startsWith('Bearer ')
+  ) {
     return res.status(401).json({
       success: false,
       message: 'Token manquant',
     });
   }
 
-  const token = authHeader.split(' ')[1];
+  const token =
+      authHeader.split(' ')[1];
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(
+      token,
+      JWT_SECRET,
+    );
+
     req.userId = decoded.id;
     req.user = decoded;
+
     next();
   } catch (e) {
     return res.status(401).json({
@@ -123,30 +153,48 @@ function auth(req, res, next) {
 
 const authMiddleware = auth;
 
-app.get('/test-upload', (req, res) => {
-  res.sendFile(
-    path.resolve(__dirname, 'uploads', 'medical-results', 'test.pdf')
-  );
-});
-
 // =========================
 // BASIC ROUTE
 // =========================
 app.get('/', (req, res) => {
-  res.send(`FGPay API running on http://localhost:${PORT}`);
+  res.send(
+    `FG Santé API running on port ${PORT}`,
+  );
 });
 
+// =========================
+// TEST MEDICAL UPLOAD
+// =========================
+app.get(
+  '/test-upload',
+  (req, res) => {
+    res.sendFile(
+      path.resolve(
+        __dirname,
+        'uploads',
+        'medical-results',
+        'test.pdf',
+      ),
+    );
+  },
+);
 
 // =========================
-// EXTERNAL FEATURE ROUTES
+// STARTUP DB CHECK
 // =========================
-app.use('/api/stripe', stripeRoutes);
-app.use('/api/esim', esimRoutes);
-app.use('/api/wallet', walletRoutes);
-app.use('/api/paypal', paypalRoutes);
-app.use('/api/services', walletRoutes);
-
-
+pool
+  .query('SELECT NOW()')
+  .then(() =>
+    console.log(
+      'FG SANTÉ DB CONNECTED OK',
+    ),
+  )
+  .catch((err) =>
+    console.error(
+      'FG SANTÉ DB ERROR:',
+      err.message,
+    ),
+  );
 // =========================
 // LOGIN
 // =========================
@@ -1858,9 +1906,18 @@ app.post('/transfer', async (req, res) => {
     });
   }
 });
+app.get('/api/health/status', (req, res) => {
+  res.json({
+    success: true,
+    service: 'FG Santé API',
+    status: 'ok',
+  });
+});
 // =========================
 // START SERVER
 // =========================
 app.listen(PORT, () => {
-  console.log(`FGPay PostgreSQL server running on http://localhost:${PORT}`);
+  console.log(
+    `FG Santé API démarrée sur le port ${PORT}`,
+  );
 });

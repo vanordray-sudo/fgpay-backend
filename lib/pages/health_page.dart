@@ -26,9 +26,10 @@ import '../services/health_service.dart';
 import '../services/auth_service.dart';
 import 'validation_professionals_page.dart';
 import 'subscription_page.dart';
-import 'fgsante_subscription_page.dart';
 import 'admin_notifications_page.dart';
 import 'doctor_appointments_page.dart';
+import 'login_page.dart';
+import 'fgsante_subscription_page.dart';
 
 
 
@@ -292,7 +293,7 @@ boxShadow: [
       ),
     ),
     const Text(
-      'Espace santé intelligent FGPay',
+      'Espace santé intelligent FG Santé',
       style: TextStyle(color: Colors.white70),
     ),
   ],
@@ -311,6 +312,29 @@ boxShadow: [
           size: 28,
         ),
       ),
+      const SizedBox(width: 8),
+
+IconButton(
+  tooltip: 'Déconnexion',
+  onPressed: () async {
+    await AuthService.logout();
+
+    if (!context.mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LoginPage(),
+      ),
+      (route) => false,
+    );
+  },
+  icon: const Icon(
+    Icons.logout,
+    color: Colors.white,
+    size: 28,
+  ),
+),
     ],
   ),
           ),
@@ -470,21 +494,20 @@ if (role == "doctor")
     },
   ),
 
-
 if (role == "doctor")
   _healthCard(
-  icon: Icons.workspace_premium,
-  title: 'Mon abonnement FG Santé',
-  subtitle: 'Mensuel, trimestriel ou annuel',
-  onTap: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const FgSanteSubscriptionPage(),
-      ),
-    );
-  },
-),
+    icon: Icons.workspace_premium,
+    title: 'Mon abonnement FG Santé',
+    subtitle: 'Mensuel, trimestriel ou annuel',
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const FgSanteSubscriptionPage(),
+        ),
+      );
+    },
+  ),
 
   
 
